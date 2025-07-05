@@ -15,18 +15,18 @@ app.use(cors({ origin: "*" }));
 app.use(express.json({ limit: "20mb" }));
 
 const port = Number(process.env.PORT) || 4000;
-let printerName = process.env.PRINTER_NAME || "";
+let printerName = "";
 
 (async () => {
-  if (!printerName) {
-    try {
-      const detected = await detectDefaultPrinter();
-      if (detected) {
-        printerName = detected;
-      }
-    } catch (err) {
-      console.warn("Could not detect default printer:", err);
+  try {
+    const detected = await detectDefaultPrinter();
+    if (detected) {
+      printerName = detected;
+    } else {
+      console.warn("No default printer detected – printing will fall back to Windows default queue");
     }
+  } catch (err) {
+    console.warn("Could not detect default printer:", err);
   }
 
   // Advertise via mDNS/Bonjour
@@ -77,8 +77,25 @@ let printerName = process.env.PRINTER_NAME || "";
     }
   });
 
-  app.listen(port, () => {
-    console.log(`Print server listening on http://localhost:${port}`);
+  app.listen(port, "0.0.0.0", () => {
+    const nets = os.networkInterfaces();
+    const addrs: string[] = [];
+    for (const name of Object.keys(nets)) {
+      for (const net of nets[name] || []) {
+        if (net.family === "IPv4" && !net.internal) {
+          addrs.push(net.address);
+        }
+      }
+    }
+
+    if (addrs.length === 0) {
+      console.log(`Print server listening on http://localhost:${port}`);
+    } else {
+      console.log("Print server listening on:");
+      for (const addr of addrs) {
+        console.log(`  http://${addr}:${port}`);
+      }
+    }
     console.log(`Advertising _photoprint._tcp with printer=\"${printerName}\"`);
   });
 })(); 
