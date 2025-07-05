@@ -18,6 +18,21 @@ app.use((0, cors_1.default)({ origin: "*" }));
 app.use(express_1.default.json({ limit: "20mb" }));
 const port = Number(process.env.PORT) || 4000;
 let printerName = "";
+// ────────────────────────────────────────────────────────────
+// Fancy banner so the console shows the server is "ALIVE" 👋
+// Color: #02C5FF (RGB 2,197,255)
+const asciiArt = `
+            _      _______      ________ 
+      /\\   | |    |_   _\\ \\    / /  ____|
+     /  \\  | |      | |  \\ \\  / /| |__   
+    / /\\ \\ | |      | |   \\ \\/ / |  __|  
+   / ____ \\| |____ _| |_   \\  /  | |____ 
+  /_/    \\_\\______|_____|   \\/   |______|
+                                         
+                                         `;
+const colorStart = "\x1b[38;2;2;197;255m"; // 24-bit ANSI color
+const reset = "\x1b[0m";
+console.log(colorStart + asciiArt + reset + "\n");
 (async () => {
     try {
         const detected = await (0, print_1.detectDefaultPrinter)();
@@ -74,7 +89,7 @@ let printerName = "";
             }
         }
     });
-    app.listen(port, "0.0.0.0", () => {
+    app.listen(port, "0.0.0.0", async () => {
         const nets = os_1.default.networkInterfaces();
         const addrs = [];
         for (const name of Object.keys(nets)) {
@@ -94,5 +109,6 @@ let printerName = "";
             }
         }
         console.log(`Advertising _photoprint._tcp with printer=\"${printerName}\"`);
+        // No automatic browser launch; users can navigate manually.
     });
 })();

@@ -8,9 +8,11 @@
     "build": "tsc",
     "prestart": "npm run build",
     "start": "node dist/index.js",
-    "package:win": "npm run build && npx pkg dist/index.js -t node18-win-x64 --output photobooth-print-server.exe",
-    "package:mac": "npm run build && npx pkg dist/index.js -t node18-macos-x64 --output photobooth-print-server",
-    "package:linux": "npm run build && npx pkg dist/index.js -t node18-linux-x64 --output photobooth-print-server"
+    "package:windows": "npx pkg dist/index.js -t node18-win-x64 --output releases/alive-print-windows.exe",
+    "package:macos": "npx pkg dist/index.js -t node18-macos-x64 --output releases/alive-print-macos",
+    "package:linux": "npx pkg dist/index.js -t node18-linux-x64 --output releases/alive-print-linux",
+    "package": "npm run build && npm run clean && npm run package:windows && npm run package:macos && npm run package:linux",
+    "clean": "rimraf releases && mkdir releases"
   },
   "dependencies": {
     "@types/express": "^4.17.17",
@@ -25,6 +27,7 @@
     "@types/node": "^20.8.10",
     "@types/uuid": "^9.0.2",
     "pkg": "^5.8.1",
+    "rimraf": "^5.0.10",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.2.2"
   },
