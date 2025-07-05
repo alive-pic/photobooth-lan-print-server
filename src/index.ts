@@ -1,0 +1,84 @@
+import express from "express";
+import cors from "cors";
+import dotenv from "dotenv";
+import { v4 as uuidv4 } from "uuid";
+import os from "os";
+import fs from "fs/promises";
+import path from "path";
+import bonjourLib from "bonjour";
+import { print, detectDefaultPrinter } from "./print";
+
+dotenv.config();
+
+const app = express();
+app.use(cors({ origin: "*" }));
+app.use(express.json({ limit: "20mb" }));
+
+const port = Number(process.env.PORT) || 4000;
+let printerName = process.env.PRINTER_NAME || "";
+
+(async () => {
+  if (!printerName) {
+    try {
+      const detected = await detectDefaultPrinter();
+      if (detected) {
+        printerName = detected;
+      }
+    } catch (err) {
+      console.warn("Could not detect default printer:", err);
+    }
+  }
+
+  // Advertise via mDNS/Bonjour
+  const bonjour = bonjourLib();
+  bonjour.publish({
+    name: "PhotoBooth Print Server",
+    type: "photoprint",
+    port,
+    txt: {
+      printer: printerName || "default",
+    },
+  });
+
+  app.get("/health", (_, res) => {
+    res.send("OK");
+  });
+
+  app.post("/print", async (req, res) => {
+    const { copies = 1, mimeType = "image/png", data } = req.body || {};
+
+    if (!data || typeof data !== "string") {
+      return res.status(400).json({ error: "Missing base64 data" });
+    }
+
+    const jobId = uuidv4();
+    const ext = mimeType === "image/jpeg" ? "jpg" : "png";
+    const tempDir = os.tmpdir();
+    const filePath = path.join(tempDir, `${jobId}.${ext}`);
+
+    try {
+      await fs.writeFile(filePath, Buffer.from(data, "base64"));
+      console.log(`[${jobId}] Saved print file to ${filePath}`);
+
+      await print({ filePath, copies, printerName });
+      console.log(`[${jobId}] Print command completed`);
+
+      res.json({ jobId, copies });
+    } catch (err: any) {
+      console.error(`[${jobId}] Print error`, err);
+      res.status(500).json({ error: err.message });
+    } finally {
+      try {
+        await fs.rm(filePath, { force: true });
+        console.log(`[${jobId}] Temp file removed`);
+      } catch (err) {
+        console.warn(`[${jobId}] Failed to remove temp file`, err);
+      }
+    }
+  });
+
+  app.listen(port, () => {
+    console.log(`Print server listening on http://localhost:${port}`);
+    console.log(`Advertising _photoprint._tcp with printer=\"${printerName}\"`);
+  });
+})(); 
