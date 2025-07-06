@@ -12,6 +12,7 @@ const promises_1 = __importDefault(require("fs/promises"));
 const path_1 = __importDefault(require("path"));
 const bonjour_1 = __importDefault(require("bonjour"));
 const print_1 = require("./print");
+const node_process_1 = require("node:process");
 dotenv_1.default.config();
 const app = (0, express_1.default)();
 // Request logger for debugging
@@ -63,7 +64,21 @@ console.log(colorStart + asciiArt + reset + "\n");
     });
     app.get("/health", (req, res) => {
         console.log(`[DEBUG] /health check received from ${req.ip}`);
-        res.send("OK");
+        res.json({
+            status: "OK",
+            printer: printerName || "default",
+            timestamp: new Date().toISOString()
+        });
+    });
+    // New endpoint to get printer information
+    app.get("/info", (req, res) => {
+        console.log(`[DEBUG] /info request received from ${req.ip}`);
+        res.json({
+            printerName: printerName || "default",
+            platform: node_process_1.platform,
+            timestamp: new Date().toISOString(),
+            version: "1.0.0"
+        });
     });
     app.post("/print", async (req, res) => {
         const { copies = 1, mimeType = "image/png", data } = req.body || {};

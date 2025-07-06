@@ -64,7 +64,22 @@ console.log(colorStart + asciiArt + reset + "\n");
 
   app.get("/health", (req, res) => {
     console.log(`[DEBUG] /health check received from ${req.ip}`);
-    res.send("OK");
+    res.json({ 
+      status: "OK", 
+      printer: printerName || "default",
+      timestamp: new Date().toISOString()
+    });
+  });
+
+  // New endpoint to get printer information
+  app.get("/info", (req, res) => {
+    console.log(`[DEBUG] /info request received from ${req.ip}`);
+    res.json({
+      printerName: printerName || "default",
+      platform: platform,
+      timestamp: new Date().toISOString(),
+      version: "1.0.0"
+    });
   });
 
   app.post("/print", async (req, res) => {
