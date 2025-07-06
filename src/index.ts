@@ -12,6 +12,11 @@ import { platform } from "node:process";
 dotenv.config();
 
 const app = express();
+// Request logger for debugging
+app.use((req, _res, next) => {
+  console.log(`[DEBUG] ${new Date().toISOString()} ${req.method} ${req.url} from ${req.ip}`);
+  next();
+});
 app.use(cors({ origin: "*" }));
 app.use(express.json({ limit: "20mb" }));
 
@@ -57,7 +62,8 @@ console.log(colorStart + asciiArt + reset + "\n");
     },
   });
 
-  app.get("/health", (_, res) => {
+  app.get("/health", (req, res) => {
+    console.log(`[DEBUG] /health check received from ${req.ip}`);
     res.send("OK");
   });
 
@@ -69,6 +75,7 @@ console.log(colorStart + asciiArt + reset + "\n");
     }
 
     const jobId = uuidv4();
+    console.log(`[DEBUG] /print request ${jobId} copies=${copies} mime=${mimeType}`);
     const ext = mimeType === "image/jpeg" ? "jpg" : "png";
     const tempDir = os.tmpdir();
     const filePath = path.join(tempDir, `${jobId}.${ext}`);

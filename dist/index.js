@@ -14,6 +14,11 @@ const bonjour_1 = __importDefault(require("bonjour"));
 const print_1 = require("./print");
 dotenv_1.default.config();
 const app = (0, express_1.default)();
+// Request logger for debugging
+app.use((req, _res, next) => {
+    console.log(`[DEBUG] ${new Date().toISOString()} ${req.method} ${req.url} from ${req.ip}`);
+    next();
+});
 app.use((0, cors_1.default)({ origin: "*" }));
 app.use(express_1.default.json({ limit: "20mb" }));
 const port = Number(process.env.PORT) || 4000;
@@ -56,7 +61,8 @@ console.log(colorStart + asciiArt + reset + "\n");
             printer: printerName || "default",
         },
     });
-    app.get("/health", (_, res) => {
+    app.get("/health", (req, res) => {
+        console.log(`[DEBUG] /health check received from ${req.ip}`);
         res.send("OK");
     });
     app.post("/print", async (req, res) => {
@@ -65,6 +71,7 @@ console.log(colorStart + asciiArt + reset + "\n");
             return res.status(400).json({ error: "Missing base64 data" });
         }
         const jobId = (0, uuid_1.v4)();
+        console.log(`[DEBUG] /print request ${jobId} copies=${copies} mime=${mimeType}`);
         const ext = mimeType === "image/jpeg" ? "jpg" : "png";
         const tempDir = os_1.default.tmpdir();
         const filePath = path_1.default.join(tempDir, `${jobId}.${ext}`);
