@@ -8,9 +8,9 @@
     "build": "tsc",
     "prestart": "npm run build",
     "start": "node dist/index.js",
-    "package:windows": "npx pkg dist/index.js -t node18-win-x64 --output releases/alive-print-windows.exe",
-    "package:macos": "npx pkg dist/index.js -t node18-macos-x64 --output releases/alive-print-macos",
-    "package:linux": "npx pkg dist/index.js -t node18-linux-x64 --output releases/alive-print-linux",
+    "package:windows": "npx pkg dist/index.js -t node18-win-x64 --output releases/alive-magic-print-windows.exe",
+    "package:macos": "npx pkg dist/index.js -t node18-macos-x64 --output releases/alive-magic-print-macos",
+    "package:linux": "npx pkg dist/index.js -t node18-linux-x64 --output releases/alive-magic-print-linux",
     "package": "npm run build && npm run clean && npm run package:windows && npm run package:macos && npm run package:linux",
     "clean": "rimraf releases && mkdir releases"
   },
