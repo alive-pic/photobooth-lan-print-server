@@ -7,7 +7,7 @@ REM ─────────────────────────�
 
 cd /d %~dp0
 
-set "BIN=photobooth-print-server.exe"
+set "BIN=alive-magic-print-windows.exe"
 if not exist "%BIN%" (
   echo Error: %BIN% not found next to start.bat
   pause
