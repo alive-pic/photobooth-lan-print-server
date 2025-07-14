@@ -107,6 +107,28 @@ console.log(colorStart + asciiArt + reset + "\n");
             timestamp: new Date().toISOString()
         });
     });
+    // New endpoint to refresh available printers
+    app.get("/printers/refresh", async (req, res) => {
+        console.log(`[DEBUG] /printers/refresh request received from ${req.ip}`);
+        try {
+            availablePrinters = await (0, print_1.getAvailablePrinters)();
+            console.log(`[INFO] Refreshed available printers: ${availablePrinters.join(", ")}`);
+            res.json({
+                defaultPrinter: printerName || "default",
+                availablePrinters: availablePrinters,
+                timestamp: new Date().toISOString(),
+                success: true
+            });
+        }
+        catch (error) {
+            console.error("[ERROR] Failed to refresh printers:", error);
+            res.status(500).json({
+                error: "Failed to refresh printers",
+                timestamp: new Date().toISOString(),
+                success: false
+            });
+        }
+    });
     app.post("/print", async (req, res) => {
         const { copies = 1, mimeType = "image/png", data, targetPrinter } = req.body || {};
         if (!data || typeof data !== "string") {
