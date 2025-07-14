@@ -38,5 +38,19 @@
   "license": "MIT",
   "pkg": {
     "assets": []
+  },
+  "build": {
+    "appId": "com.alive.alive-magic-print",
+    "productName": "Alive Magic Print",
+    "icon": "src/public/icons/logo",
+    "win": {
+      "icon": "src/public/icons/logo.ico"
+    },
+    "mac": {
+      "icon": "src/public/icons/logo.icns"
+    },
+    "linux": {
+      "icon": "src/public/icons/logo.png"
+    }
   }
 }
