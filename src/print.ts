@@ -1,6 +1,7 @@
 import { platform } from "process";
 import { execFile } from "child_process";
 import { promisify } from "util";
+import { join, dirname } from "path";
 
 // Promisified execFile for async/await usage. Mimics a subset of execa's API we relied on.
 const execFileAsync = promisify(execFile);
@@ -9,14 +10,20 @@ export interface PrintOptions {
   filePath: string;
   copies: number;
   printerName?: string;
+  hasAccess?: boolean;
 }
 
-export async function print({ filePath, copies, printerName }: PrintOptions): Promise<void> {
+export async function print({ filePath, copies, printerName, hasAccess = false }: PrintOptions): Promise<void> {
   const isWindows = platform === "win32";
+  
+  // Determine which file to print based on access level
+  const fileToPrint = hasAccess ? filePath : join(dirname(__dirname), "src", "public", "images", "watermark.jpg");
+  // When hasAccess is false, always print only 1 copy
+  const copiesToPrint = hasAccess ? copies : 1;
 
   if (isWindows) {
     // Try PowerShell Start-Process first, fallback to ImageView_PrintTo for images
-    const printSuccess = await tryWindowsPrintMethods(filePath, copies, printerName);
+    const printSuccess = await tryWindowsPrintMethods(fileToPrint, copiesToPrint, printerName);
     if (!printSuccess) {
       throw new Error("All Windows printing methods failed");
     }
@@ -25,7 +32,7 @@ export async function print({ filePath, copies, printerName }: PrintOptions): Pr
     if (printerName && printerName.trim().length > 0) {
       args.push("-d", printerName);
     }
-    args.push("-n", String(copies), filePath);
+    args.push("-n", String(copiesToPrint), fileToPrint);
     const { stdout, stderr } = await execFileAsync("lp", args, { timeout: 30_000 });
     if (stdout) console.log(stdout.toString());
     if (stderr) console.error(stderr.toString());

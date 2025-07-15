@@ -13,6 +13,8 @@ const path_1 = __importDefault(require("path"));
 const bonjour_1 = __importDefault(require("bonjour"));
 const print_1 = require("./print");
 const node_process_1 = require("node:process");
+const readline_1 = __importDefault(require("readline"));
+const child_process_1 = require("child_process");
 dotenv_1.default.config();
 const app = (0, express_1.default)();
 // Request logger for debugging
@@ -40,28 +42,126 @@ const asciiArt = `
 const colorStart = "\x1b[38;2;2;197;255m"; // 24-bit ANSI color
 const reset = "\x1b[0m";
 console.log(colorStart + asciiArt + reset + "\n");
+// Function to open printer settings
+function openPrinterSettings() {
+    console.log(colorStart + "🖨️  Opening printer settings..." + reset);
+    if (node_process_1.platform === "win32") {
+        // Windows: Open printer settings - try multiple methods
+        // First try to open the default printer properties
+        const defaultPrinterCommand = printerName ?
+            `rundll32 printui.dll,PrintUIEntry /p /n "${printerName}"` :
+            "rundll32 printui.dll,PrintUIEntry /p";
+        (0, child_process_1.exec)(defaultPrinterCommand, (error) => {
+            if (error) {
+                // Fallback to printer management
+                (0, child_process_1.exec)("rundll32 printui.dll,PrintUIEntry /s", (error2) => {
+                    if (error2) {
+                        // Fallback to control panel printers
+                        (0, child_process_1.exec)("control printers", (error3) => {
+                            if (error3) {
+                                // Final fallback to settings app
+                                (0, child_process_1.exec)("start ms-settings:printers", (error4) => {
+                                    if (error4) {
+                                        console.error(colorStart + "❌ Failed to open printer settings. Please open manually from Windows Settings." + reset);
+                                    }
+                                    else {
+                                        console.log(colorStart + "✅ Printer settings opened successfully!" + reset);
+                                    }
+                                });
+                            }
+                            else {
+                                console.log(colorStart + "✅ Printer settings opened successfully!" + reset);
+                            }
+                        });
+                    }
+                    else {
+                        console.log(colorStart + "✅ Printer management opened successfully!" + reset);
+                    }
+                });
+            }
+            else {
+                console.log(colorStart + `✅ Printer settings opened for: ${printerName || 'default printer'}!` + reset);
+            }
+        });
+    }
+    else if (node_process_1.platform === "darwin") {
+        // macOS: Open System Preferences > Printers & Scanners
+        (0, child_process_1.exec)("open 'x-apple.systempreferences:com.apple.preference.printfax'", (error) => {
+            if (error) {
+                console.error(colorStart + "❌ Failed to open printer settings. Please open manually from System Preferences." + reset);
+            }
+            else {
+                console.log(colorStart + "✅ Printer settings opened successfully!" + reset);
+            }
+        });
+    }
+    else {
+        // Linux: Try to open printer settings
+        (0, child_process_1.exec)("system-config-printer", (error) => {
+            if (error) {
+                // Fallback to CUPS web interface
+                (0, child_process_1.exec)("xdg-open http://localhost:631", (error2) => {
+                    if (error2) {
+                        console.error(colorStart + "❌ Failed to open printer settings. Please open manually." + reset);
+                    }
+                    else {
+                        console.log(colorStart + "✅ CUPS printer interface opened!" + reset);
+                    }
+                });
+            }
+            else {
+                console.log(colorStart + "✅ Printer settings opened successfully!" + reset);
+            }
+        });
+    }
+}
+// Setup keyboard listener
+const rl = readline_1.default.createInterface({
+    input: process.stdin,
+    output: process.stdout
+});
+// Hide cursor and disable echo for cleaner input handling
+readline_1.default.emitKeypressEvents(process.stdin);
+if (process.stdin.isTTY) {
+    process.stdin.setRawMode(true);
+}
+process.stdin.on('keypress', (str, key) => {
+    if (key.name === 'p' || key.sequence === 'p') {
+        openPrinterSettings();
+    }
+    // Allow Ctrl+C to exit
+    if (key.ctrl && key.name === 'c') {
+        console.log(colorStart + "\n[INFO] Shutting down server..." + reset);
+        process.exit(0);
+    }
+});
 (async () => {
     try {
         // Detect default printer
         const detected = await (0, print_1.detectDefaultPrinter)();
         if (detected) {
             printerName = detected;
-            console.log(`[INFO] Default printer detected: ${printerName}`);
+            console.log(colorStart + `🖨️  Default printer found: ${printerName}` + reset);
         }
         else {
-            console.warn("No default printer detected – printing will fall back to Windows default queue");
+            console.warn(colorStart + "⚠️  No default printer detected – will use Windows default print queue" + reset);
         }
         // Get all available printers
         try {
             availablePrinters = await (0, print_1.getAvailablePrinters)();
-            console.log(`[INFO] Available printers: ${availablePrinters.join(", ")}`);
+            if (availablePrinters.length > 0) {
+                console.log(colorStart + `📋 Available printers: ${availablePrinters.join(", ")}` + reset);
+            }
+            else {
+                console.warn(colorStart + "⚠️  No printers detected on your system" + reset);
+            }
         }
         catch (err) {
-            console.warn("Could not detect available printers:", err);
+            console.warn(colorStart + "⚠️  Could not detect available printers" + reset);
         }
     }
     catch (err) {
-        console.warn("Could not detect default printer:", err);
+        console.warn(colorStart + "⚠️  Could not detect default printer" + reset);
     }
     // Advertise via mDNS/Bonjour
     const bonjour = (0, bonjour_1.default)();
@@ -112,7 +212,7 @@ console.log(colorStart + asciiArt + reset + "\n");
         console.log(`[DEBUG] /printers/refresh request received from ${req.ip}`);
         try {
             availablePrinters = await (0, print_1.getAvailablePrinters)();
-            console.log(`[INFO] Refreshed available printers: ${availablePrinters.join(", ")}`);
+            console.log(colorStart + `🔄 Refreshed printer list: ${availablePrinters.join(", ")}` + reset);
             res.json({
                 defaultPrinter: printerName || "default",
                 availablePrinters: availablePrinters,
@@ -121,7 +221,7 @@ console.log(colorStart + asciiArt + reset + "\n");
             });
         }
         catch (error) {
-            console.error("[ERROR] Failed to refresh printers:", error);
+            console.error(colorStart + "❌ Failed to refresh printer list" + reset);
             res.status(500).json({
                 error: "Failed to refresh printers",
                 timestamp: new Date().toISOString(),
@@ -130,7 +230,7 @@ console.log(colorStart + asciiArt + reset + "\n");
         }
     });
     app.post("/print", async (req, res) => {
-        const { copies = 1, mimeType = "image/png", data, targetPrinter } = req.body || {};
+        const { copies = 1, mimeType = "image/png", data, targetPrinter, hasAccess = false } = req.body || {};
         if (!data || typeof data !== "string") {
             return res.status(400).json({ error: "Missing base64 data" });
         }
@@ -138,19 +238,19 @@ console.log(colorStart + asciiArt + reset + "\n");
         const selectedPrinter = targetPrinter || printerName;
         // Validate printer exists if specified
         if (selectedPrinter && selectedPrinter !== "default" && !availablePrinters.includes(selectedPrinter)) {
-            console.warn(`[WARN] Requested printer "${selectedPrinter}" not found in available printers`);
+            console.warn(colorStart + `⚠️  Requested printer "${selectedPrinter}" not found in available printers` + reset);
             // Don't fail here, let the print function handle it
         }
         const jobId = (0, uuid_1.v4)();
-        console.log(`[DEBUG] /print request ${jobId} copies=${copies} mime=${mimeType} printer=${selectedPrinter || "default"}`);
+        console.log(colorStart + `🖨️  Print job ${jobId}: ${copies} copy${copies > 1 ? 'ies' : 'y'} to ${selectedPrinter || "default printer"}` + reset);
         const ext = mimeType === "image/jpeg" ? "jpg" : "png";
         const tempDir = os_1.default.tmpdir();
         const filePath = path_1.default.join(tempDir, `${jobId}.${ext}`);
         try {
             await promises_1.default.writeFile(filePath, Buffer.from(data, "base64"));
-            console.log(`[${jobId}] Saved print file to ${filePath}`);
-            await (0, print_1.print)({ filePath, copies, printerName: selectedPrinter });
-            console.log(`[${jobId}] Print command completed successfully`);
+            console.log(colorStart + `📁 Photo saved temporarily for printing` + reset);
+            await (0, print_1.print)({ filePath, copies, printerName: selectedPrinter, hasAccess });
+            console.log(colorStart + `✅ Print job completed successfully!` + reset);
             res.json({
                 jobId,
                 copies,
@@ -159,7 +259,7 @@ console.log(colorStart + asciiArt + reset + "\n");
             });
         }
         catch (err) {
-            console.error(`[${jobId}] Print error`, err);
+            console.error(colorStart + `❌ Print job failed: ${err.message}` + reset);
             res.status(500).json({
                 error: err.message,
                 jobId,
@@ -179,10 +279,10 @@ console.log(colorStart + asciiArt + reset + "\n");
         finally {
             try {
                 await promises_1.default.rm(filePath, { force: true });
-                console.log(`[${jobId}] Temp file removed`);
+                console.log(colorStart + `🧹 Temporary file cleaned up` + reset);
             }
             catch (err) {
-                console.warn(`[${jobId}] Failed to remove temp file`, err);
+                console.warn(colorStart + `⚠️  Could not clean up temporary file` + reset);
             }
         }
     });
@@ -196,22 +296,31 @@ console.log(colorStart + asciiArt + reset + "\n");
                 }
             }
         }
+        console.log(colorStart + "🚀 PhotoBooth Print Server is now running!" + reset);
+        console.log(colorStart + "📱 Alive app can now connect to print photos" + reset);
+        console.log("");
         if (addrs.length === 0) {
-            console.log(`Print server listening on http://localhost:${port}`);
+            console.log(colorStart + `🌐 Server address: http://localhost:${port}` + reset);
         }
         else {
-            console.log("Print server listening on:");
+            console.log(colorStart + "🌐 Server addresses:" + reset);
             for (const addr of addrs) {
-                console.log(`  http://${addr}:${port}`);
+                console.log(colorStart + `   http://${addr}:${port}` + reset);
             }
         }
-        console.log(`Advertising _photoprint._tcp with printer="${printerName}"`);
-        console.log(`Available printers: ${availablePrinters.length > 0 ? availablePrinters.join(", ") : "none detected"}`);
-        console.log("\n=== Printer Compatibility Information ===");
-        console.log("• Modern printers (DNP-DS620, etc.): Use PowerShell Start-Process method");
-        console.log("• Specialized photo printers: Use rundll32 printui.dll method");
-        console.log("• Legacy systems: Fallback to ImageView_PrintTo method");
-        console.log("• The server will try all methods automatically for best compatibility");
-        console.log("==========================================\n");
+        console.log("");
+        console.log(colorStart + `🖨️  Default printer: ${printerName || "Windows default"}` + reset);
+        if (availablePrinters.length > 0) {
+            console.log(colorStart + `📋 Available printers: ${availablePrinters.join(", ")}` + reset);
+        }
+        else {
+            console.log(colorStart + "⚠️  No printers detected - please check your printer setup" + reset);
+        }
+        console.log("");
+        // Keyboard shortcuts instructions
+        console.log(colorStart + "============= Quick Actions =============" + reset);
+        console.log(colorStart + "• Press 'p' to open printer settings" + reset);
+        console.log(colorStart + "• Press Ctrl+C to stop the server" + reset);
+        console.log(colorStart + "==========================================\n" + reset);
     });
 })();
