@@ -33,33 +33,27 @@ export async function print({ filePath, copies, printerName, hasAccess = false }
       args.push("-d", printerName);
     }
     args.push("-n", String(copiesToPrint), fileToPrint);
-    const { stdout, stderr } = await execFileAsync("lp", args, { timeout: 30_000 });
-    if (stdout) console.log(stdout.toString());
-    if (stderr) console.error(stderr.toString());
+    await execFileAsync("lp", args, { timeout: 30_000 });
   }
 }
 
 async function tryWindowsPrintMethods(filePath: string, copies: number, printerName?: string): Promise<boolean> {
   // Method 1: PowerShell Start-Process with Print verb (modern, compatible with most printers)
   try {
-    console.log("[print] Attempting PowerShell Start-Process method...");
     await printWithPowerShell(filePath, copies, printerName);
-    console.log("[print] PowerShell Start-Process method succeeded");
     return true;
   } catch (err) {
-    console.warn("[print] PowerShell Start-Process method failed:", err);
+    // Suppress detailed error messages for user experience
   }
 
   // Method 2: Legacy ImageView_PrintTo method (fallback for images only)
   if (isImageFile(filePath)) {
     try {
-      console.log("[print] Attempting legacy ImageView_PrintTo method...");
       await printWithImageView(filePath, copies, printerName);
-      console.log("[print] Legacy ImageView_PrintTo method succeeded");
       return true;
-    } catch (err) {
-      console.warn("[print] Legacy ImageView_PrintTo method failed:", err);
-    }
+      } catch (err) {
+    // Suppress detailed error messages for user experience
+  }
   }
 
   return false;
@@ -71,13 +65,11 @@ async function printWithPowerShell(filePath: string, copies: number, printerName
     // Note: PowerShell Start-Process does not support specifying a printer directly
     // The print dialog will use the default printer, or the user must set the default printer
     // If you want to force a printer, you must set it as default before printing
-    const { stdout, stderr } = await execFileAsync("powershell", [
+    await execFileAsync("powershell", [
       "-NoProfile",
       "-Command",
       powershellCommand
     ], { timeout: 30_000 });
-    if (stdout) console.log(stdout.toString());
-    if (stderr) console.error(stderr.toString());
   }
 }
 
@@ -89,9 +81,7 @@ async function printWithImageView(filePath: string, copies: number, printerName?
     if (printerName && printerName.trim().length > 0) {
       args.push(printerName);
     }
-    const { stdout, stderr } = await execFileAsync("rundll32.exe", args, { timeout: 30_000 });
-    if (stdout) console.log(stdout.toString());
-    if (stderr) console.error(stderr.toString());
+    await execFileAsync("rundll32.exe", args, { timeout: 30_000 });
   }
 }
 

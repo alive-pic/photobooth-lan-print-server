@@ -14,17 +14,29 @@ import { exec } from "child_process";
 dotenv.config();
 
 const app = express();
-// Request logger for debugging
-app.use((req, _res, next) => {
-  console.log(`[DEBUG] ${new Date().toISOString()} ${req.method} ${req.url} from ${req.ip}`);
-  next();
-});
 app.use(cors({ origin: "*" }));
 app.use(express.json({ limit: "20mb" }));
 
 const port = Number(process.env.PORT) || 4000;
 let printerName = "";
 let availablePrinters: string[] = [];
+let printCount = 0; // Add print counter
+let statsLinePosition = 0; // Track where the stats section is
+
+// Function to update print statistics display
+function updatePrintStats() {
+  // Clear the last few lines and redraw the statistics section
+  // Move up to clear the print job messages and stats section
+  for (let i = 0; i < 7; i++) {
+    process.stdout.write('\x1b[1A'); // Move up one line
+    process.stdout.write('\x1b[2K'); // Clear that line
+  }
+  
+  // Redraw the statistics section
+  console.log(colorStart + "============= Print Statistics =============" + reset);
+  console.log(colorStart + `📊 Total prints: ${printCount}` + reset);
+  console.log(colorStart + "==========================================\n" + reset);
+}
 
 // ────────────────────────────────────────────────────────────
 // Fancy banner so the console shows the server is "ALIVE" 👋
@@ -172,7 +184,6 @@ process.stdin.on('keypress', (str, key) => {
   });
 
   app.get("/health", (req, res) => {
-    console.log(`[DEBUG] /health check received from ${req.ip}`);
     res.json({ 
       status: "OK", 
       printer: printerName || "default",
@@ -182,7 +193,6 @@ process.stdin.on('keypress', (str, key) => {
 
   // Enhanced info endpoint with printer compatibility information
   app.get("/info", (req, res) => {
-    console.log(`[DEBUG] /info request received from ${req.ip}`);
     res.json({
       printerName: printerName || "default",
       availablePrinters: availablePrinters,
@@ -199,7 +209,6 @@ process.stdin.on('keypress', (str, key) => {
 
   // New endpoint to get available printers
   app.get("/printers", (req, res) => {
-    console.log(`[DEBUG] /printers request received from ${req.ip}`);
     res.json({
       defaultPrinter: printerName || "default",
       availablePrinters: availablePrinters,
@@ -209,7 +218,6 @@ process.stdin.on('keypress', (str, key) => {
 
   // New endpoint to refresh available printers
   app.get("/printers/refresh", async (req, res) => {
-    console.log(`[DEBUG] /printers/refresh request received from ${req.ip}`);
     try {
       availablePrinters = await getAvailablePrinters();
       console.log(colorStart + `🔄 Refreshed printer list: ${availablePrinters.join(", ")}` + reset);
@@ -257,6 +265,10 @@ process.stdin.on('keypress', (str, key) => {
 
       await print({ filePath, copies, printerName: selectedPrinter, hasAccess });
       console.log(colorStart + `✅ Print job completed successfully!` + reset);
+      
+      // Increment print counter
+      printCount += copies;
+      updatePrintStats(); // Update statistics display
 
       res.json({ 
         jobId, 
@@ -281,14 +293,13 @@ process.stdin.on('keypress', (str, key) => {
           ]
         }
       });
-    } finally {
-      try {
-        await fs.rm(filePath, { force: true });
-        console.log(colorStart + `🧹 Temporary file cleaned up` + reset);
-      } catch (err) {
-        console.warn(colorStart + `⚠️  Could not clean up temporary file` + reset);
+          } finally {
+        try {
+          await fs.rm(filePath, { force: true });
+        } catch (err) {
+          // Silently handle cleanup errors
+        }
       }
-    }
   });
 
   app.listen(port, "0.0.0.0", async () => {
@@ -328,6 +339,12 @@ process.stdin.on('keypress', (str, key) => {
     console.log(colorStart + "============= Quick Actions =============" + reset);
     console.log(colorStart + "• Press 'p' to open printer settings" + reset);
     console.log(colorStart + "• Press Ctrl+C to stop the server" + reset);
+    console.log(colorStart + "==========================================" + reset);
+    
+    // Print statistics section
+    console.log("");
+    console.log(colorStart + "============= Print Statistics =============" + reset);
+    console.log(colorStart + `📊 Total prints: ${printCount}` + reset);
     console.log(colorStart + "==========================================\n" + reset);
   });
 })(); 
