@@ -42,17 +42,15 @@ export async function print({ filePath, copies, printerName, hasAccess = false, 
 }
 
 async function tryWindowsPrintMethods(filePath: string, copies: number, printerName?: string, paperSize?: { widthInch: number; heightInch: number }): Promise<boolean> {
-  // Method 1: Try advanced printing with paper size specification (for 2x6 templates)
-  if (paperSize && paperSize.widthInch === 4 && paperSize.heightInch === 6) {
-    try {
-      await printWithAdvancedWindowsAPI(filePath, copies, printerName, paperSize);
-      return true;
-    } catch (err) {
-      console.log('Advanced printing failed, falling back to basic methods');
-    }
+  // Method 1: Use .NET printing system through PowerShell (respects all printer preferences)
+  try {
+    await printWithDotNetPrinting(filePath, copies, printerName, paperSize);
+    return true;
+  } catch (err) {
+    console.log('.NET printing failed, falling back to basic methods');
   }
 
-  // Method 2: PowerShell Start-Process with Print verb (modern, compatible with most printers)
+  // Method 2: PowerShell Start-Process with Print verb (fallback method)
   try {
     await printWithPowerShell(filePath, copies, printerName, paperSize);
     return true;
@@ -73,22 +71,147 @@ async function tryWindowsPrintMethods(filePath: string, copies: number, printerN
   return false;
 }
 
-async function printWithAdvancedWindowsAPI(filePath: string, copies: number, printerName?: string, paperSize?: { widthInch: number; heightInch: number }): Promise<void> {
-  // For 2x6 templates that should be cut from 4x6 paper, we need to ensure the printer knows about the paper size
-  // This method uses Windows printing APIs to specify paper size and cutting instructions
+async function printWithDotNetPrinting(filePath: string, copies: number, printerName?: string, paperSize?: { widthInch: number; heightInch: number }): Promise<void> {
+  // This method uses .NET printing classes through PowerShell to respect all printer preferences
+  // including cutting settings, paper sizes, and other driver-specific options
   
-  for (let i = 0; i < copies; i++) {
-    // Use rundll32 with printui.dll to print with specific settings
-    // This method can specify printer and paper settings
-    const printCommand = `rundll32 printui.dll,PrintUIEntry /k /n "${printerName || 'default'}" "${filePath}"`;
+  const escapedFilePath = filePath.replace(/'/g, "''");
+  const escapedPrinterName = printerName ? printerName.replace(/'/g, "''") : '';
+  
+  const powershellScript = `
+    Add-Type -AssemblyName System.Drawing
+    Add-Type -AssemblyName System.Windows.Forms
+    
+    $filePath = '${escapedFilePath}'
+    $copies = ${copies}
+    $printerName = '${escapedPrinterName}'
     
     try {
-      await execFileAsync("cmd", ["/c", printCommand], { timeout: 30_000 });
-    } catch (error) {
-      // If the advanced method fails, throw the error to fall back to basic methods
-      throw error;
+      # Create PrintDocument object
+      $printDoc = New-Object System.Drawing.Printing.PrintDocument
+      
+      # Set printer name if specified, otherwise use default
+      if ($printerName -and $printerName.Trim() -ne '') {
+        $printDoc.PrinterSettings.PrinterName = $printerName
+      }
+      
+      # Set number of copies
+      $printDoc.PrinterSettings.Copies = $copies
+      
+      # Important: Use the printer's default settings (including cutting preferences and orientation)
+      # This ensures all user-configured preferences are respected
+      $printDoc.DefaultPageSettings = $printDoc.PrinterSettings.DefaultPageSettings
+      
+      # Set document name for print queue
+      $printDoc.DocumentName = Split-Path $filePath -Leaf
+      
+      # Load and print the image
+      $image = $null
+      $printDoc.add_PrintPage({
+        param($sender, $e)
+        try {
+          $image = [System.Drawing.Image]::FromFile($filePath)
+          
+          # Use the full page bounds (not margin bounds) to fill entire printable area
+          # This ensures the image uses the full paper size as configured in printer preferences
+          $pageWidth = $e.PageBounds.Width
+          $pageHeight = $e.PageBounds.Height
+          $imageWidth = $image.Width
+          $imageHeight = $image.Height
+          
+          # Determine if we need to rotate the image to match the page orientation
+          $pageIsLandscape = $pageWidth -gt $pageHeight
+          $imageIsLandscape = $imageWidth -gt $imageHeight
+          
+          $rotatedImage = $image
+          $finalImageWidth = $imageWidth
+          $finalImageHeight = $imageHeight
+          
+          # If orientations don't match, rotate the image 90 degrees
+          if ($pageIsLandscape -ne $imageIsLandscape) {
+            Write-Host "Rotating image to match page orientation"
+            $rotatedImage = New-Object System.Drawing.Bitmap $imageHeight, $imageWidth
+            $graphics = [System.Drawing.Graphics]::FromImage($rotatedImage)
+            
+            # Set high quality rendering
+            $graphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+            $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
+            $graphics.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+            
+            # Rotate the image 90 degrees clockwise
+            $graphics.TranslateTransform($imageHeight / 2, $imageWidth / 2)
+            $graphics.RotateTransform(90)
+            $graphics.TranslateTransform(-$imageWidth / 2, -$imageHeight / 2)
+            
+            # Draw the rotated image
+            $graphics.DrawImage($image, 0, 0, $imageWidth, $imageHeight)
+            $graphics.Dispose()
+            
+            # Update dimensions for the rotated image
+            $finalImageWidth = $imageHeight
+            $finalImageHeight = $imageWidth
+          }
+          
+          # Calculate scaling to fill the entire page while maintaining aspect ratio
+          $scaleX = $pageWidth / $finalImageWidth
+          $scaleY = $pageHeight / $finalImageHeight
+          
+          # Use the larger scale to fill the page (may crop slightly if aspect ratios don't match)
+          # This ensures the image fills the entire printable area
+          $scale = [Math]::Max($scaleX, $scaleY)
+          
+          $newWidth = [int]($finalImageWidth * $scale)
+          $newHeight = [int]($finalImageHeight * $scale)
+          
+          # Center the image on the page
+          $x = ($pageWidth - $newWidth) / 2
+          $y = ($pageHeight - $newHeight) / 2
+          
+          # Draw the image to fill the entire page
+          $destRect = New-Object System.Drawing.Rectangle $x, $y, $newWidth, $newHeight
+          $e.Graphics.DrawImage($rotatedImage, $destRect)
+          
+          # Clean up rotated image if we created one
+          if ($rotatedImage -ne $image) {
+            $rotatedImage.Dispose()
+          }
+          
+        } catch {
+          Write-Error "Error drawing image: $_"
+        }
+      })
+      
+      # Add cleanup handler
+      $printDoc.add_EndPrint({
+        if ($image) {
+          $image.Dispose()
+        }
+      })
+      
+      # Print the document - this will use all configured printer preferences
+      # including orientation, cutting, paper size, etc.
+      $printDoc.Print()
+      
+    } catch {
+      Write-Error "Printing failed: $_"
+      exit 1
+    } finally {
+      if ($image) { $image.Dispose() }
+      if ($printDoc) { $printDoc.Dispose() }
     }
-  }
+  `;
+  
+  await execFileAsync("powershell", [
+    "-NoProfile",
+    "-ExecutionPolicy", "Bypass",
+    "-Command", powershellScript
+  ], { timeout: 30_000 });
+}
+
+async function printWithAdvancedWindowsAPI(filePath: string, copies: number, printerName?: string, paperSize?: { widthInch: number; heightInch: number }): Promise<void> {
+  // Deprecated: This method had issues with printer preferences
+  // Now using printWithDotNetPrinting as the primary method
+  throw new Error("Advanced Windows API method deprecated - using .NET printing instead");
 }
 
 async function printWithPowerShell(filePath: string, copies: number, printerName?: string, paperSize?: { widthInch: number; heightInch: number }): Promise<void> {
