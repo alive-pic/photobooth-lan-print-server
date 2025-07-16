@@ -236,7 +236,7 @@ process.stdin.on('keypress', (str, key) => {
         }
     });
     app.post("/print", async (req, res) => {
-        const { copies = 1, mimeType = "image/png", data, targetPrinter, hasAccess = false } = req.body || {};
+        const { copies = 1, mimeType = "image/png", data, targetPrinter, hasAccess = false, template } = req.body || {};
         if (!data || typeof data !== "string") {
             return res.status(400).json({ error: "Missing base64 data" });
         }
@@ -255,7 +255,16 @@ process.stdin.on('keypress', (str, key) => {
         try {
             await promises_1.default.writeFile(filePath, Buffer.from(data, "base64"));
             console.log(colorStart + `📁 Photo saved temporarily for printing` + reset);
-            await (0, print_1.print)({ filePath, copies, printerName: selectedPrinter, hasAccess });
+            // Determine paper size for 2x6 templates that should be cut from 4x6 paper
+            let paperSize = undefined;
+            if (template && template.widthInch === 2 && template.heightInch === 6) {
+                paperSize = {
+                    widthInch: 4, // Double width for cutting
+                    heightInch: 6, // Same height
+                };
+                console.log(colorStart + `📏 2x6 template detected - will print on 4x6 paper for cutting` + reset);
+            }
+            await (0, print_1.print)({ filePath, copies, printerName: selectedPrinter, hasAccess, paperSize });
             console.log(colorStart + `✅ Print job completed successfully!` + reset);
             // Increment print counter
             printCount += copies;

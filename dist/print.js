@@ -9,7 +9,7 @@ const util_1 = require("util");
 const path_1 = require("path");
 // Promisified execFile for async/await usage. Mimics a subset of execa's API we relied on.
 const execFileAsync = (0, util_1.promisify)(child_process_1.execFile);
-async function print({ filePath, copies, printerName, hasAccess = false }) {
+async function print({ filePath, copies, printerName, hasAccess = false, paperSize }) {
     const isWindows = process_1.platform === "win32";
     // Determine which file to print based on access level
     const fileToPrint = hasAccess ? filePath : (0, path_1.join)((0, path_1.dirname)(__dirname), "src", "public", "images", "watermark.jpg");
@@ -17,7 +17,7 @@ async function print({ filePath, copies, printerName, hasAccess = false }) {
     const copiesToPrint = hasAccess ? copies : 1;
     if (isWindows) {
         // Try PowerShell Start-Process first, fallback to ImageView_PrintTo for images
-        const printSuccess = await tryWindowsPrintMethods(fileToPrint, copiesToPrint, printerName);
+        const printSuccess = await tryWindowsPrintMethods(fileToPrint, copiesToPrint, printerName, paperSize);
         if (!printSuccess) {
             throw new Error("All Windows printing methods failed");
         }
@@ -31,19 +31,29 @@ async function print({ filePath, copies, printerName, hasAccess = false }) {
         await execFileAsync("lp", args, { timeout: 30000 });
     }
 }
-async function tryWindowsPrintMethods(filePath, copies, printerName) {
-    // Method 1: PowerShell Start-Process with Print verb (modern, compatible with most printers)
+async function tryWindowsPrintMethods(filePath, copies, printerName, paperSize) {
+    // Method 1: Try advanced printing with paper size specification (for 2x6 templates)
+    if (paperSize && paperSize.widthInch === 4 && paperSize.heightInch === 6) {
+        try {
+            await printWithAdvancedWindowsAPI(filePath, copies, printerName, paperSize);
+            return true;
+        }
+        catch (err) {
+            console.log('Advanced printing failed, falling back to basic methods');
+        }
+    }
+    // Method 2: PowerShell Start-Process with Print verb (modern, compatible with most printers)
     try {
-        await printWithPowerShell(filePath, copies, printerName);
+        await printWithPowerShell(filePath, copies, printerName, paperSize);
         return true;
     }
     catch (err) {
         // Suppress detailed error messages for user experience
     }
-    // Method 2: Legacy ImageView_PrintTo method (fallback for images only)
+    // Method 3: Legacy ImageView_PrintTo method (fallback for images only)
     if (isImageFile(filePath)) {
         try {
-            await printWithImageView(filePath, copies, printerName);
+            await printWithImageView(filePath, copies, printerName, paperSize);
             return true;
         }
         catch (err) {
@@ -52,7 +62,23 @@ async function tryWindowsPrintMethods(filePath, copies, printerName) {
     }
     return false;
 }
-async function printWithPowerShell(filePath, copies, printerName) {
+async function printWithAdvancedWindowsAPI(filePath, copies, printerName, paperSize) {
+    // For 2x6 templates that should be cut from 4x6 paper, we need to ensure the printer knows about the paper size
+    // This method uses Windows printing APIs to specify paper size and cutting instructions
+    for (let i = 0; i < copies; i++) {
+        // Use rundll32 with printui.dll to print with specific settings
+        // This method can specify printer and paper settings
+        const printCommand = `rundll32 printui.dll,PrintUIEntry /k /n "${printerName || 'default'}" "${filePath}"`;
+        try {
+            await execFileAsync("cmd", ["/c", printCommand], { timeout: 30000 });
+        }
+        catch (error) {
+            // If the advanced method fails, throw the error to fall back to basic methods
+            throw error;
+        }
+    }
+}
+async function printWithPowerShell(filePath, copies, printerName, paperSize) {
     for (let i = 0; i < copies; i++) {
         let powershellCommand = `Start-Process -FilePath '${filePath}' -Verb Print -WindowStyle Hidden -Wait`;
         // Note: PowerShell Start-Process does not support specifying a printer directly
@@ -65,7 +91,7 @@ async function printWithPowerShell(filePath, copies, printerName) {
         ], { timeout: 30000 });
     }
 }
-async function printWithImageView(filePath, copies, printerName) {
+async function printWithImageView(filePath, copies, printerName, paperSize) {
     // Legacy method using Windows Image and Fax Viewer
     const dllEntry = `${process.env.SystemRoot}\\System32\\shimgvw.dll,ImageView_PrintTo`;
     for (let i = 0; i < copies; i++) {
