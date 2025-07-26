@@ -91,47 +91,40 @@ async function updateFromGit(_remoteVersion) {
 // ────────────────────────────────────────────────────────────
 // pkg-compiled executable update
 // ────────────────────────────────────────────────────────────
-async function updateCompiledBinary(_remoteVersion) {
+async function updateCompiledBinary(remoteVersion) {
     try {
         const assetName = getAssetName();
         const downloadUrl = `https://github.com/alive-pic/photobooth-lan-print-server/raw/main/releases/${assetName}`;
-        const tempFile = path_1.default.join(os_1.default.tmpdir(), assetName);
         console.log(`[UPDATE] Downloading latest binary (${assetName})…`);
+        const exeDir = path_1.default.dirname(process.execPath);
+        const newPath = path_1.default.join(exeDir, assetName);
+        const tempFile = path_1.default.join(os_1.default.tmpdir(), assetName);
         try {
             await downloadFile(downloadUrl, tempFile);
         }
         catch (err) {
             if (err.message && err.message.includes("404")) {
                 console.warn("[UPDATE] Pre-built binary not found – falling back to source update.");
-                const ok = await updateFromGit(_remoteVersion);
-                if (!ok) {
-                    logManualDownloadInstruction();
-                }
-                return ok;
+                return await updateFromGit(remoteVersion);
             }
-            logManualDownloadInstruction();
             throw err;
         }
-        // Make executable on *nix
-        if (process.platform !== "win32") {
-            fs_1.default.chmodSync(tempFile, 0o755);
+        // Windows cannot overwrite the running exe. Save as *_new.exe* (or versioned) instead.
+        let finalPath = newPath;
+        if (process.platform === "win32" && newPath.toLowerCase() === process.execPath.toLowerCase()) {
+            finalPath = path_1.default.join(exeDir, assetName.replace(/\.exe$/i, `-${remoteVersion}.exe`));
         }
-        console.log("[UPDATE] Launching new version…");
-        const args = process.argv.slice(2); // preserve user args
-        const child = (0, child_process_1.spawn)(tempFile, args, {
-            detached: true,
-            stdio: "inherit",
-        });
-        child.unref();
-        // Give the child a moment to start before exiting
-        setTimeout(() => {
-            console.log("[UPDATE] Exiting old version after launch…");
-            process.exit(0);
-        }, 500);
-        return true;
+        fs_1.default.copyFileSync(tempFile, finalPath);
+        if (process.platform !== "win32") {
+            fs_1.default.chmodSync(finalPath, 0o755);
+        }
+        console.log(`${cyan}[UPDATE] New version downloaded to:${reset} ${finalPath}`);
+        console.log(`${cyan}[UPDATE] Please close this window and run the new file to complete the update.${reset}`);
+        return false; // keep current process running until user closes manually
     }
     catch (err) {
         console.error("[UPDATE] Binary update failed", err);
+        logManualDownloadInstruction();
         return false;
     }
 }
