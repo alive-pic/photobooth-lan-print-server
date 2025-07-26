@@ -73,8 +73,9 @@ async function updateFromGit(_remoteVersion) {
         (0, child_process_1.execSync)("npm install", { cwd: repoRoot, stdio: "inherit" });
         // Rebuild in case source changed
         (0, child_process_1.execSync)("npm run build", { cwd: repoRoot, stdio: "inherit" });
-        // Relaunch
-        (0, child_process_1.spawn)("npm", ["start"], {
+        // Relaunch using node directly to avoid npm path issues
+        const entry = path_1.default.join(repoRoot, "dist", "index.js");
+        (0, child_process_1.spawn)(process.execPath, [entry], {
             cwd: repoRoot,
             stdio: "inherit",
             detached: true,
