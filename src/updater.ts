@@ -130,7 +130,12 @@ async function updateCompiledBinary(_remoteVersion: string): Promise<boolean> {
       stdio: "inherit",
     });
     child.unref();
-    return true; // caller should exit
+    // Give the child a moment to start before exiting
+    setTimeout(() => {
+      console.log("[UPDATE] Exiting old version after launch…");
+      process.exit(0);
+    }, 500);
+    return true;
   } catch (err) {
     console.error("[UPDATE] Binary update failed", err);
     return false;
