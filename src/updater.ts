@@ -103,7 +103,20 @@ async function updateCompiledBinary(_remoteVersion: string): Promise<boolean> {
 
     const tempFile = path.join(os.tmpdir(), assetName);
     console.log(`[UPDATE] Downloading latest binary (${assetName})…`);
-    await downloadFile(downloadUrl, tempFile);
+    try {
+      await downloadFile(downloadUrl, tempFile);
+    } catch (err: any) {
+      if (err.message && err.message.includes("404")) {
+        console.warn("[UPDATE] Pre-built binary not found – falling back to source update.");
+        const ok = await updateFromGit(_remoteVersion);
+        if (!ok) {
+          logManualDownloadInstruction();
+        }
+        return ok;
+      }
+      logManualDownloadInstruction();
+      throw err;
+    }
 
     // Make executable on *nix
     if (process.platform !== "win32") {
@@ -220,4 +233,9 @@ function downloadFile(url: string, dest: string, depth = 0): Promise<void> {
       })
       .on("error", (err) => reject(err));
   });
+}
+
+function logManualDownloadInstruction() {
+  console.log(`${cyan}[UPDATE] Automatic update failed. Please download the latest version from:`);
+  console.log(`${cyan}https://github.com/alive-pic/photobooth-lan-print-server/tree/main/releases${reset}`);
 } 

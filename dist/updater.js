@@ -97,7 +97,21 @@ async function updateCompiledBinary(_remoteVersion) {
         const downloadUrl = `https://github.com/alive-pic/photobooth-lan-print-server/raw/main/releases/${assetName}`;
         const tempFile = path_1.default.join(os_1.default.tmpdir(), assetName);
         console.log(`[UPDATE] Downloading latest binary (${assetName})…`);
-        await downloadFile(downloadUrl, tempFile);
+        try {
+            await downloadFile(downloadUrl, tempFile);
+        }
+        catch (err) {
+            if (err.message && err.message.includes("404")) {
+                console.warn("[UPDATE] Pre-built binary not found – falling back to source update.");
+                const ok = await updateFromGit(_remoteVersion);
+                if (!ok) {
+                    logManualDownloadInstruction();
+                }
+                return ok;
+            }
+            logManualDownloadInstruction();
+            throw err;
+        }
         // Make executable on *nix
         if (process.platform !== "win32") {
             fs_1.default.chmodSync(tempFile, 0o755);
@@ -204,4 +218,8 @@ function downloadFile(url, dest, depth = 0) {
         })
             .on("error", (err) => reject(err));
     });
+}
+function logManualDownloadInstruction() {
+    console.log(`${cyan}[UPDATE] Automatic update failed. Please download the latest version from:`);
+    console.log(`${cyan}https://github.com/alive-pic/photobooth-lan-print-server/tree/main/releases${reset}`);
 }
