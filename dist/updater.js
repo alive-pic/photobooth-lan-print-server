@@ -12,6 +12,7 @@ const child_process_1 = require("child_process");
 const semver_1 = __importDefault(require("semver"));
 // ANSI cyan for prefix
 const cyan = "\x1b[38;2;2;197;255m";
+const yellow = "\x1b[33m";
 const reset = "\x1b[0m";
 /**
  * Check GitHub for a newer version and, if found, update automatically.
@@ -118,9 +119,9 @@ async function updateCompiledBinary(remoteVersion) {
         if (process.platform !== "win32") {
             fs_1.default.chmodSync(finalPath, 0o755);
         }
-        console.log(`${cyan}[UPDATE] New version downloaded to:${reset} ${finalPath}`);
-        console.log(`${cyan}[UPDATE] Please close this window and run the new file to complete the update.${reset}`);
-        return false; // keep current process running until user closes manually
+        console.log(`${yellow}[UPDATE] New version ${remoteVersion} downloaded to:${reset} ${finalPath}`);
+        console.log(`${yellow}[UPDATE] Please close this window and run the new file to complete the update.${reset}`);
+        return true; // signal caller to exit
     }
     catch (err) {
         console.error("[UPDATE] Binary update failed", err);

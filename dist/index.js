@@ -149,7 +149,7 @@ process.stdin.on('keypress', (str, key) => {
 (async () => {
     const shouldExit = await (0, updater_1.checkForUpdates)();
     if (shouldExit) {
-        return; // Update process will take over
+        process.exit(0);
     }
     try {
         // Detect default printer

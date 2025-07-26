@@ -149,7 +149,7 @@ process.stdin.on('keypress', (str, key) => {
 (async () => {
   const shouldExit = await checkForUpdates();
   if (shouldExit) {
-    return; // Update process will take over
+    process.exit(0);
   }
 
   try {
