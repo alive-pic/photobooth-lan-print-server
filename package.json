@@ -1,6 +1,6 @@
 {
   "name": "photobooth-lan-print-server",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Zero-install LAN print server for the PhotoBooth iPad app",
   "main": "dist/index.js",
   "scripts": {
