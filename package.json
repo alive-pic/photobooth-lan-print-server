@@ -1,6 +1,6 @@
 {
   "name": "photobooth-lan-print-server",
-  "version": "1.0.1",
+  "version": "1.0.3",
   "description": "Zero-install LAN print server for the PhotoBooth iPad app",
   "main": "dist/index.js",
   "scripts": {
@@ -39,7 +39,9 @@
   "keywords": [],
   "license": "MIT",
   "pkg": {
-    "assets": []
+    "assets": [
+      "public/images/watermark.jpg"
+    ]
   },
   "build": {
     "appId": "com.alive.alive-magic-print",

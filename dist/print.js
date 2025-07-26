@@ -1,4 +1,40 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.print = print;
 exports.detectDefaultPrinter = detectDefaultPrinter;
@@ -7,12 +43,37 @@ const process_1 = require("process");
 const child_process_1 = require("child_process");
 const util_1 = require("util");
 const path_1 = require("path");
+const os_1 = __importDefault(require("os"));
+const uuid_1 = require("uuid");
+const fs_1 = require("fs");
+const https_1 = __importDefault(require("https"));
+const fsSync = __importStar(require("fs"));
 // Promisified execFile for async/await usage. Mimics a subset of execa's API we relied on.
 const execFileAsync = (0, util_1.promisify)(child_process_1.execFile);
 async function print({ filePath, copies, printerName, hasAccess = false, paperSize }) {
     const isWindows = process_1.platform === "win32";
-    // Determine which file to print based on access level
-    const fileToPrint = hasAccess ? filePath : (0, path_1.join)((0, path_1.dirname)(__dirname), "src", "public", "images", "watermark.jpg");
+    let fileToPrint = filePath;
+    let tempWatermark;
+    if (!hasAccess) {
+        // Locate watermark asset on disk (works in dev and packaged builds)
+        const baseDir = process.pkg ? (0, path_1.dirname)(process.execPath) : (0, path_1.dirname)(__dirname);
+        const watermarkSrc = (0, path_1.resolve)(baseDir, "public", "images", "watermark.jpg");
+        // Copy watermark to a real temporary path because embedded assets might be in a snapshot
+        tempWatermark = (0, path_1.resolve)(os_1.default.tmpdir(), `watermark-${(0, uuid_1.v4)()}.jpg`);
+        try {
+            await fs_1.promises.copyFile(watermarkSrc, tempWatermark);
+        }
+        catch {
+            try {
+                const data = await fs_1.promises.readFile(watermarkSrc);
+                await fs_1.promises.writeFile(tempWatermark, data);
+            }
+            catch {
+                await downloadWatermark(tempWatermark);
+            }
+        }
+        fileToPrint = tempWatermark;
+    }
     // When hasAccess is false, always print only 1 copy
     const copiesToPrint = hasAccess ? copies : 1;
     if (isWindows) {
@@ -29,6 +90,13 @@ async function print({ filePath, copies, printerName, hasAccess = false, paperSi
         }
         args.push("-n", String(copiesToPrint), fileToPrint);
         await execFileAsync("lp", args, { timeout: 30000 });
+    }
+    // Cleanup temporary watermark copy
+    if (tempWatermark) {
+        try {
+            await fs_1.promises.unlink(tempWatermark);
+        }
+        catch { }
     }
 }
 async function tryWindowsPrintMethods(filePath, copies, printerName, paperSize) {
@@ -277,4 +345,20 @@ async function getAvailablePrinters() {
     catch {
         return [];
     }
+}
+async function downloadWatermark(dest) {
+    const url = "https://raw.githubusercontent.com/alive-pic/photobooth-lan-print-server/main/src/public/images/watermark.jpg";
+    await new Promise((resolve, reject) => {
+        https_1.default.get(url, (res) => {
+            if (res.statusCode !== 200) {
+                return reject(new Error(`Failed to download watermark: HTTP ${res.statusCode}`));
+            }
+            const file = fsSync.createWriteStream(dest);
+            res.pipe(file);
+            file.on("finish", () => {
+                file.close();
+                resolve();
+            });
+        }).on("error", reject);
+    });
 }

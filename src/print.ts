@@ -1,7 +1,12 @@
 import { platform } from "process";
 import { execFile } from "child_process";
 import { promisify } from "util";
-import { join, dirname } from "path";
+import { join, dirname, resolve } from "path";
+import os from "os";
+import { v4 as uuidv4 } from "uuid";
+import { promises as fs } from "fs";
+import https from "https";
+import * as fsSync from "fs";
 
 // Promisified execFile for async/await usage. Mimics a subset of execa's API we relied on.
 const execFileAsync = promisify(execFile);
@@ -20,8 +25,29 @@ export interface PrintOptions {
 export async function print({ filePath, copies, printerName, hasAccess = false, paperSize }: PrintOptions): Promise<void> {
   const isWindows = platform === "win32";
   
-  // Determine which file to print based on access level
-  const fileToPrint = hasAccess ? filePath : join(dirname(__dirname), "src", "public", "images", "watermark.jpg");
+  let fileToPrint = filePath;
+  let tempWatermark: string | undefined;
+
+  if (!hasAccess) {
+    // Locate watermark asset on disk (works in dev and packaged builds)
+    const baseDir = (process as any).pkg ? dirname(process.execPath) : dirname(__dirname);
+    const watermarkSrc = resolve(baseDir, "public", "images", "watermark.jpg");
+
+    // Copy watermark to a real temporary path because embedded assets might be in a snapshot
+    tempWatermark = resolve(os.tmpdir(), `watermark-${uuidv4()}.jpg`);
+    try {
+      await fs.copyFile(watermarkSrc, tempWatermark);
+    } catch {
+      try {
+        const data = await fs.readFile(watermarkSrc);
+        await fs.writeFile(tempWatermark, data);
+      } catch {
+        await downloadWatermark(tempWatermark);
+      }
+    }
+    fileToPrint = tempWatermark;
+  }
+
   // When hasAccess is false, always print only 1 copy
   const copiesToPrint = hasAccess ? copies : 1;
 
@@ -38,6 +64,11 @@ export async function print({ filePath, copies, printerName, hasAccess = false, 
     }
     args.push("-n", String(copiesToPrint), fileToPrint);
     await execFileAsync("lp", args, { timeout: 30_000 });
+  }
+
+  // Cleanup temporary watermark copy
+  if (tempWatermark) {
+    try { await fs.unlink(tempWatermark); } catch {}
   }
 }
 
@@ -301,4 +332,21 @@ export async function getAvailablePrinters(): Promise<string[]> {
   } catch {
     return [];
   }
+} 
+
+async function downloadWatermark(dest: string): Promise<void> {
+  const url = "https://raw.githubusercontent.com/alive-pic/photobooth-lan-print-server/main/src/public/images/watermark.jpg";
+  await new Promise<void>((resolve, reject) => {
+    https.get(url, (res) => {
+      if (res.statusCode !== 200) {
+        return reject(new Error(`Failed to download watermark: HTTP ${res.statusCode}`));
+      }
+      const file = fsSync.createWriteStream(dest);
+      res.pipe(file);
+      file.on("finish", () => {
+        file.close();
+        resolve();
+      });
+    }).on("error", reject);
+  });
 } 
