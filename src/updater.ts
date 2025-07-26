@@ -5,6 +5,10 @@ import path from "path";
 import { execSync, spawn } from "child_process";
 import semver from "semver";
 
+// ANSI cyan for prefix
+const cyan = "\x1b[38;2;2;197;255m";
+const reset = "\x1b[0m";
+
 /**
  * Check GitHub for a newer version and, if found, update automatically.
  *
@@ -13,10 +17,9 @@ import semver from "semver";
  */
 export async function checkForUpdates(): Promise<boolean> {
   try {
-    const localPkgPath = path.resolve(__dirname, "../package.json");
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const localPkg = JSON.parse(fs.readFileSync(localPkgPath, "utf8"));
-    const currentVersion: string = localPkg.version || "0.0.0";
+    const currentVersion = getCurrentVersion();
+
+    console.log(`${cyan}[UPDATE] Checking for updates… (current ${currentVersion})${reset}`);
 
     const remotePkgJson = await fetchRawGithubFileAsString(
       "alive-pic",
@@ -25,22 +28,30 @@ export async function checkForUpdates(): Promise<boolean> {
       "package.json"
     );
     if (!remotePkgJson) {
-      return false; // Could not fetch – silently continue
+      console.warn("[UPDATE] Could not fetch latest version information – skipping update check.");
+      return false;
     }
     const remotePkg = JSON.parse(remotePkgJson);
     const remoteVersion: string = remotePkg.version || "0.0.0";
 
     if (!semver.valid(currentVersion) || !semver.valid(remoteVersion)) {
-      return false; // Invalid semver, skip
+      console.warn("[UPDATE] Invalid semver detected – skipping update check.");
+      return false;
     }
 
     if (semver.lt(currentVersion, remoteVersion)) {
-      console.log(`\x1b[38;2;2;197;255m[UPDATE] New version ${remoteVersion} available (current ${currentVersion}). Updating…\x1b[0m`);
+      console.log(`\x1b[38;2;2;197;255m[UPDATE] Detected older version ${currentVersion}. Updating to ${remoteVersion}…\x1b[0m`);
       const updated = await performSelfUpdate(remoteVersion);
       return updated; // if true, caller should exit
+    } else {
+      if (semver.gt(currentVersion, remoteVersion)) {
+        console.log(`\x1b[38;2;2;197;255m[UPDATE] You are running a newer local version (${currentVersion}) than the official release (${remoteVersion}).\x1b[0m`);
+      } else {
+        console.log(`\x1b[38;2;2;197;255m[UPDATE] You are already running the latest version (${currentVersion}).\x1b[0m`);
+      }
     }
   } catch (err) {
-    // Fail silently – we don't want to interrupt main flow
+    console.error("[UPDATE] Unexpected error during update check", err);
   }
   return false;
 }
@@ -122,6 +133,25 @@ function getAssetName(): string {
     default:
       return `${base}-linux`;
   }
+}
+
+function getCurrentVersion(): string {
+  // Attempt 1: `require` works inside pkg snapshot
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const pkgJson = require("../package.json");
+    if (pkgJson && pkgJson.version) return pkgJson.version as string;
+  } catch {}
+
+  // Attempt 2: read from filesystem relative to process.cwd()
+  try {
+    const pkgPath = path.resolve(process.cwd(), "package.json");
+    const data = fs.readFileSync(pkgPath, "utf8");
+    const pkgJson = JSON.parse(data);
+    if (pkgJson.version) return pkgJson.version as string;
+  } catch {}
+
+  return "0.0.0";
 }
 
 // ────────────────────────────────────────────────────────────

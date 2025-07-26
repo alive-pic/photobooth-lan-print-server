@@ -55,7 +55,7 @@ const reset = "\x1b[0m";
 console.log(colorStart + asciiArt + reset + "\n");
 // Function to open printer settings
 function openPrinterSettings() {
-    console.log(colorStart + "🖨️  Opening printer settings... [ALIVE TEST --- 16/07/2025 --- 1.0.0]" + reset);
+    console.log(colorStart + "🖨️  Opening printer settings..." + reset);
     if (node_process_1.platform === "win32") {
         // Windows: Open printer settings - try multiple methods
         // First try to open the default printer properties
