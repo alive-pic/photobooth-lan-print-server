@@ -70,7 +70,7 @@ async function updateFromGit(_remoteVersion) {
         console.log("[UPDATE] Updating via git pull…");
         (0, child_process_1.execSync)("git fetch --all", { cwd: repoRoot, stdio: "inherit" });
         (0, child_process_1.execSync)("git reset --hard origin/main", { cwd: repoRoot, stdio: "inherit" });
-        (0, child_process_1.execSync)("npm install --production", { cwd: repoRoot, stdio: "inherit" });
+        (0, child_process_1.execSync)("npm install", { cwd: repoRoot, stdio: "inherit" });
         // Rebuild in case source changed
         (0, child_process_1.execSync)("npm run build", { cwd: repoRoot, stdio: "inherit" });
         // Relaunch
@@ -172,26 +172,35 @@ function fetchRawGithubFileAsString(owner, repo, branch, filePath) {
             .on("error", (err) => reject(err));
     });
 }
-function downloadFile(url, dest) {
+function downloadFile(url, dest, depth = 0) {
     return new Promise((resolve, reject) => {
-        const file = fs_1.default.createWriteStream(dest);
+        if (depth > 5)
+            return reject(new Error("Too many redirects"));
         https_1.default
             .get(url, (response) => {
+            // Follow redirect (3xx)
+            if (response.statusCode && response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+                const redirectUrl = response.headers.location.startsWith("http")
+                    ? response.headers.location
+                    : new URL(response.headers.location, url).href;
+                return resolve(downloadFile(redirectUrl, dest, depth + 1));
+            }
             if (response.statusCode !== 200) {
-                file.close();
-                fs_1.default.unlink(dest, () => { });
+                response.resume();
                 return reject(new Error(`Download failed: HTTP ${response.statusCode}`));
             }
+            const file = fs_1.default.createWriteStream(dest);
             response.pipe(file);
             file.on("finish", () => {
                 file.close();
                 resolve();
             });
+            file.on("error", (err) => {
+                file.close();
+                fs_1.default.unlink(dest, () => { });
+                reject(err);
+            });
         })
-            .on("error", (err) => {
-            file.close();
-            fs_1.default.unlink(dest, () => { });
-            reject(err);
-        });
+            .on("error", (err) => reject(err));
     });
 }

@@ -78,8 +78,9 @@ async function updateFromGit(_remoteVersion: string): Promise<boolean> {
     // Rebuild in case source changed
     execSync("npm run build", { cwd: repoRoot, stdio: "inherit" });
 
-    // Relaunch
-    spawn("npm", ["start"], {
+    // Relaunch using node directly to avoid npm path issues
+    const entry = path.join(repoRoot, "dist", "index.js");
+    spawn(process.execPath, [entry], {
       cwd: repoRoot,
       stdio: "inherit",
       detached: true,
