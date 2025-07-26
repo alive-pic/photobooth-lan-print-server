@@ -248,14 +248,19 @@ export async function detectDefaultPrinter(): Promise<string | undefined> {
   const isWindows = platform === "win32";
   try {
     if (isWindows) {
+      // Force UTF-8 output so Unicode printer names (e.g. Hebrew) are preserved
+      const psScriptDefaultPrinter = `[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; $OutputEncoding=[System.Text.Encoding]::UTF8; (Get-CimInstance Win32_Printer | Where-Object { $_.Default -eq $true }).Name`;
       const { stdout } = await execFileAsync(
         "powershell",
         [
           "-NoProfile",
           "-Command",
-          "(Get-CimInstance Win32_Printer | Where-Object { $_.Default -eq $true }).Name",
+          psScriptDefaultPrinter,
         ],
-        { timeout: 10_000 }
+        {
+          timeout: 10_000,
+          encoding: "utf8",
+        }
       );
       return stdout.trim() || undefined;
     } else {
@@ -273,16 +278,21 @@ export async function getAvailablePrinters(): Promise<string[]> {
   const isWindows = platform === "win32";
   try {
     if (isWindows) {
+      // Force UTF-8 output so Unicode printer names are preserved
+      const psScriptAllPrinters = `[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; $OutputEncoding=[System.Text.Encoding]::UTF8; (Get-CimInstance Win32_Printer).Name`;
       const { stdout } = await execFileAsync(
         "powershell",
         [
           "-NoProfile",
           "-Command",
-          "(Get-CimInstance Win32_Printer).Name",
+          psScriptAllPrinters,
         ],
-        { timeout: 10_000 }
+        {
+          timeout: 10_000,
+          encoding: "utf8",
+        }
       );
-      return stdout.trim().split('\n').filter(name => name.trim().length > 0);
+      return stdout.trim().split(/\r?\n/).filter(name => name.trim().length > 0);
     } else {
       const { stdout } = await execFileAsync("lpstat", ["-p"], { timeout: 10_000 });
       const printers = stdout.match(/printer\s+(\S+)/g) || [];
