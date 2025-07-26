@@ -4,6 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.checkForUpdates = checkForUpdates;
+exports.cleanupOldExecutables = cleanupOldExecutables;
 const https_1 = __importDefault(require("https"));
 const fs_1 = __importDefault(require("fs"));
 const os_1 = __importDefault(require("os"));
@@ -22,6 +23,8 @@ const reset = "\x1b[0m";
  */
 async function checkForUpdates() {
     try {
+        // Remove outdated downloaded executables from previous updates
+        cleanupOldExecutables();
         const currentVersion = getCurrentVersion();
         console.log(`${cyan}[UPDATE] Checking for updates… (current ${currentVersion})${reset}`);
         const remotePkgJson = await fetchRawGithubFileAsString("alive-pic", "photobooth-lan-print-server", "main", "package.json");
@@ -53,6 +56,30 @@ async function checkForUpdates() {
         console.error("[UPDATE] Unexpected error during update check", err);
     }
     return false;
+}
+function cleanupOldExecutables() {
+    // Only applies when running packaged binary
+    if (!process.pkg)
+        return;
+    try {
+        const dir = path_1.default.dirname(process.execPath);
+        const base = "alive-magic-print";
+        const files = fs_1.default.readdirSync(dir);
+        for (const f of files) {
+            if (!f.startsWith(base))
+                continue;
+            const full = path_1.default.join(dir, f);
+            // Skip currently running exe
+            if (full.toLowerCase() === process.execPath.toLowerCase())
+                continue;
+            try {
+                fs_1.default.unlinkSync(full);
+                console.log(`${cyan}[UPDATE] Removed old executable: ${f}${reset}`);
+            }
+            catch { }
+        }
+    }
+    catch { }
 }
 async function performSelfUpdate(remoteVersion) {
     // If running inside a pkg executable use binary replacement, otherwise git pull

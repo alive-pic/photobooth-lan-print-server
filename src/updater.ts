@@ -18,6 +18,9 @@ const reset = "\x1b[0m";
  */
 export async function checkForUpdates(): Promise<boolean> {
   try {
+    // Remove outdated downloaded executables from previous updates
+    cleanupOldExecutables();
+
     const currentVersion = getCurrentVersion();
 
     console.log(`${cyan}[UPDATE] Checking for updates… (current ${currentVersion})${reset}`);
@@ -55,6 +58,27 @@ export async function checkForUpdates(): Promise<boolean> {
     console.error("[UPDATE] Unexpected error during update check", err);
   }
   return false;
+}
+
+export function cleanupOldExecutables() {
+  // Only applies when running packaged binary
+  if (!(process as any).pkg) return;
+
+  try {
+    const dir = path.dirname(process.execPath);
+    const base = "alive-magic-print";
+    const files = fs.readdirSync(dir);
+    for (const f of files) {
+      if (!f.startsWith(base)) continue;
+      const full = path.join(dir, f);
+      // Skip currently running exe
+      if (full.toLowerCase() === process.execPath.toLowerCase()) continue;
+      try {
+        fs.unlinkSync(full);
+        console.log(`${cyan}[UPDATE] Removed old executable: ${f}${reset}`);
+      } catch {}
+    }
+  } catch {}
 }
 
 async function performSelfUpdate(remoteVersion: string): Promise<boolean> {
