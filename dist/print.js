@@ -39,6 +39,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.print = print;
 exports.detectDefaultPrinter = detectDefaultPrinter;
 exports.getAvailablePrinters = getAvailablePrinters;
+exports.getPrinterPageSize = getPrinterPageSize;
 const process_1 = require("process");
 const child_process_1 = require("child_process");
 const util_1 = require("util");
@@ -344,6 +345,163 @@ async function getAvailablePrinters() {
     }
     catch {
         return [];
+    }
+}
+// New function to get printer's current page size settings
+async function getPrinterPageSize(printerName) {
+    const isWindows = process_1.platform === "win32";
+    try {
+        if (isWindows) {
+            const targetPrinter = printerName || await detectDefaultPrinter();
+            if (!targetPrinter) {
+                return null;
+            }
+            // Use PowerShell to get printer's current page size settings
+            const escapedPrinterName = targetPrinter.replace(/'/g, "''");
+            const psScriptPageSize = `
+        [Console]::OutputEncoding=[System.Text.Encoding]::UTF8; 
+        $OutputEncoding=[System.Text.Encoding]::UTF8;
+        
+        Add-Type -AssemblyName System.Drawing
+        Add-Type -AssemblyName System.Windows.Forms
+        
+        $printerName = '${escapedPrinterName}'
+        
+        try {
+          $printDoc = New-Object System.Drawing.Printing.PrintDocument
+          $printDoc.PrinterSettings.PrinterName = $printerName
+          
+          # Get the default page settings
+          $pageSettings = $printDoc.PrinterSettings.DefaultPageSettings
+          
+          # Get both paper size and printable area
+          $paperWidth = [Math]::Round($pageSettings.PaperSize.Width / 100, 2)
+          $paperHeight = [Math]::Round($pageSettings.PaperSize.Height / 100, 2)
+          $printableWidth = [Math]::Round($pageSettings.PrintableArea.Width / 100, 2)
+          $printableHeight = [Math]::Round($pageSettings.PrintableArea.Height / 100, 2)
+          $paperName = $pageSettings.PaperSize.PaperName
+          
+          # Try to get more detailed paper information
+          $paperSizeInfo = $pageSettings.PaperSize
+          $isCustom = $paperSizeInfo.Kind -eq [System.Drawing.Printing.PaperKind]::Custom
+          
+          # Map common paper sizes to standard names
+          $standardSizes = @{
+            "4x6" = @{ width = 4; height = 6; name = "4x6 Photo" }
+            "5x7" = @{ width = 5; height = 7; name = "5x7 Photo" }
+            "6x4" = @{ width = 6; height = 4; name = "6x4 Photo" }
+            "3x5" = @{ width = 3; height = 5; name = "3x5 Photo" }
+            "8x10" = @{ width = 8; height = 10; name = "8x10 Photo" }
+          }
+          
+          # Try to match the paper size to a standard size
+          $matchedSize = $null
+          foreach ($size in $standardSizes.GetEnumerator()) {
+            $key = $size.Key
+            $value = $size.Value
+            # Allow for small variations (within 0.5 inches)
+            if ([Math]::Abs($paperWidth - $value.width) -lt 0.5 -and [Math]::Abs($paperHeight - $value.height) -lt 0.5) {
+              $matchedSize = $value
+              break
+            }
+            # Also check if dimensions are swapped (landscape vs portrait)
+            if ([Math]::Abs($paperWidth - $value.height) -lt 0.5 -and [Math]::Abs($paperHeight - $value.width) -lt 0.5) {
+              $matchedSize = @{ width = $value.height; height = $value.width; name = $value.name + " (Landscape)" }
+              break
+            }
+          }
+          
+          # Return as JSON
+          $result = @{
+            paperWidth = $paperWidth
+            paperHeight = $paperHeight
+            printableWidth = $printableWidth
+            printableHeight = $printableHeight
+            paperName = $paperName
+            isCustom = $isCustom
+            matchedSize = $matchedSize
+          } | ConvertTo-Json -Compress
+          
+          Write-Output $result
+          
+        } catch {
+          Write-Error "Failed to get page size: $_"
+          exit 1
+        }
+      `;
+            const { stdout } = await execFileAsync("powershell", [
+                "-NoProfile",
+                "-ExecutionPolicy", "Bypass",
+                "-Command",
+                psScriptPageSize,
+            ], {
+                timeout: 10000,
+                encoding: "utf8",
+            });
+            const result = JSON.parse(stdout.trim());
+            // If we have a matched standard size, use that
+            if (result.matchedSize) {
+                return {
+                    widthInch: result.matchedSize.width,
+                    heightInch: result.matchedSize.height,
+                    name: result.matchedSize.name,
+                    actualPaperSize: {
+                        widthInch: result.paperWidth,
+                        heightInch: result.paperHeight,
+                        name: result.paperName
+                    },
+                    printableArea: {
+                        widthInch: result.printableWidth,
+                        heightInch: result.printableHeight
+                    }
+                };
+            }
+            // Otherwise return the actual paper size
+            return {
+                widthInch: result.paperWidth,
+                heightInch: result.paperHeight,
+                name: result.paperName,
+                isCustom: result.isCustom,
+                printableArea: {
+                    widthInch: result.printableWidth,
+                    heightInch: result.printableHeight
+                }
+            };
+        }
+        else {
+            // For non-Windows systems, try to get page size from CUPS
+            const targetPrinter = printerName || await detectDefaultPrinter();
+            if (!targetPrinter) {
+                return null;
+            }
+            try {
+                const { stdout } = await execFileAsync("lpoptions", ["-p", targetPrinter], { timeout: 10000 });
+                const mediaMatch = stdout.match(/media=([^\\s]+)/);
+                if (mediaMatch) {
+                    const mediaSize = mediaMatch[1];
+                    // Common CUPS media sizes mapping
+                    const sizeMap = {
+                        "4x6": { widthInch: 4, heightInch: 6, name: "4x6 Photo" },
+                        "5x7": { widthInch: 5, heightInch: 7, name: "5x7 Photo" },
+                        "6x4": { widthInch: 6, heightInch: 4, name: "6x4 Photo" },
+                        "letter": { widthInch: 8.5, heightInch: 11, name: "Letter" },
+                        "a4": { widthInch: 8.27, heightInch: 11.69, name: "A4" },
+                        "legal": { widthInch: 8.5, heightInch: 14, name: "Legal" }
+                    };
+                    return sizeMap[mediaSize] || { widthInch: 0, heightInch: 0, name: mediaSize };
+                }
+            }
+            catch {
+                // Fallback to default size if CUPS query fails
+                return { widthInch: 4, heightInch: 6, name: "Default Photo Size" };
+            }
+            // If we get here, return a default size
+            return { widthInch: 4, heightInch: 6, name: "Default Photo Size" };
+        }
+    }
+    catch (error) {
+        console.error("Failed to get printer page size:", error);
+        return null;
     }
 }
 async function downloadWatermark(dest) {

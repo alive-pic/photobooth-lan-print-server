@@ -6,7 +6,7 @@ import os from "os";
 import fs from "fs/promises";
 import path from "path";
 import bonjourLib from "bonjour";
-import { print, detectDefaultPrinter, getAvailablePrinters } from "./print";
+import { print, detectDefaultPrinter, getAvailablePrinters, getPrinterPageSize } from "./print";
 import { platform } from "node:process";
 import readline from "readline";
 import { exec } from "child_process";
@@ -243,6 +243,50 @@ process.stdin.on('keypress', (str, key) => {
     }
   });
 
+  // New endpoint to get current printer page size
+  app.get("/page_size", async (req, res) => {
+    try {
+      const targetPrinter = req.query.printer as string || printerName;
+      const pageSize = await getPrinterPageSize(targetPrinter);
+      
+      if (pageSize) {
+        let logMessage = `📏 Current page size for ${targetPrinter || "default printer"}: ${pageSize.widthInch}" x ${pageSize.heightInch}" (${pageSize.name})`;
+        
+        // Add additional information if available
+        if (pageSize.actualPaperSize && (pageSize.actualPaperSize.widthInch !== pageSize.widthInch || pageSize.actualPaperSize.heightInch !== pageSize.heightInch)) {
+          logMessage += ` [Actual paper: ${pageSize.actualPaperSize.widthInch}" x ${pageSize.actualPaperSize.heightInch}"]`;
+        }
+        
+        if (pageSize.printableArea) {
+          logMessage += ` [Printable area: ${pageSize.printableArea.widthInch}" x ${pageSize.printableArea.heightInch}"]`;
+        }
+        
+        console.log(colorStart + logMessage + reset);
+        res.json({
+          printer: targetPrinter || "default",
+          pageSize: pageSize,
+          timestamp: new Date().toISOString(),
+          success: true
+        });
+      } else {
+        console.warn(colorStart + `⚠️  Could not determine page size for ${targetPrinter || "default printer"}` + reset);
+        res.status(404).json({
+          error: "Could not determine printer page size",
+          printer: targetPrinter || "default",
+          timestamp: new Date().toISOString(),
+          success: false
+        });
+      }
+    } catch (error) {
+      console.error(colorStart + "❌ Failed to get printer page size" + reset);
+      res.status(500).json({
+        error: "Failed to get printer page size",
+        timestamp: new Date().toISOString(),
+        success: false
+      });
+    }
+  });
+
   app.post("/print", async (req, res) => {
     const { copies = 1, mimeType = "image/png", data, targetPrinter, hasAccess = false, template } = req.body || {};
 
@@ -355,6 +399,16 @@ process.stdin.on('keypress', (str, key) => {
     console.log(colorStart + "============= Quick Actions =============" + reset);
     console.log(colorStart + "• Press 'p' to open printer settings" + reset);
     console.log(colorStart + "• Press Ctrl+C to stop the server" + reset);
+    console.log(colorStart + "==========================================" + reset);
+    
+    // API endpoints information
+    console.log("");
+    console.log(colorStart + "============= API Endpoints =============" + reset);
+    console.log(colorStart + "• GET /health - Server health check" + reset);
+    console.log(colorStart + "• GET /info - Server information" + reset);
+    console.log(colorStart + "• GET /printers - Available printers" + reset);
+    console.log(colorStart + "• GET /page_size - Current printer page size" + reset);
+    console.log(colorStart + "• POST /print - Print an image" + reset);
     console.log(colorStart + "==========================================" + reset);
     
     // Print statistics section
