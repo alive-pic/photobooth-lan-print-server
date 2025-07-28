@@ -143,15 +143,18 @@ async function printWithDotNetPrinting(filePath: string, copies: number, printer
         try {
           $image = [System.Drawing.Image]::FromFile($filePath)
           
-          # Use the full page bounds (not margin bounds) to fill entire printable area
-          # This ensures the image uses the full paper size as configured in printer preferences
+          # Determine printer page orientation reliably
+          $pageIsLandscape = $e.PageSettings.Landscape
+          
+          # Obtain page bounds (already rotated if landscape)
           $pageWidth = $e.PageBounds.Width
           $pageHeight = $e.PageBounds.Height
+          
+          # Dimensions of source image (pixels)
           $imageWidth = $image.Width
           $imageHeight = $image.Height
           
-          # Determine if we need to rotate the image to match the page orientation
-          $pageIsLandscape = $pageWidth -gt $pageHeight
+          # Detect if the source image itself is landscape
           $imageIsLandscape = $imageWidth -gt $imageHeight
           
           # Detect if the image looks like a narrow strip (either orientation)
