@@ -160,22 +160,26 @@ async function printWithDotNetPrinting(filePath: string, copies: number, printer
           if ($tileTwoCopies) {
             # We will print two copies side-by-side without rotating the image.
             
-            # Scale the image to fit the page height (or half page width) while keeping aspect ratio
-            $scaleX = ($pageWidth / 2) / $imageWidth
+            # Configuration: small gap between strips (in hundredths of an inch)
+            $gapInch = 0.1  # ≈2.5 mm safety for the cutter
+            $gap = [int]($gapInch * 100)
+            
+            # Scale the image to fit the page height (or half page width minus half the gap) while keeping aspect ratio
+            $availableHalfWidth = ($pageWidth - $gap) / 2
+            $scaleX = $availableHalfWidth / $imageWidth
             $scaleY = $pageHeight / $imageHeight
             $scale = [Math]::Min($scaleX, $scaleY)
             
             $copyWidth = [int]($imageWidth * $scale)
             $copyHeight = [int]($imageHeight * $scale)
             
-            # Center each copy inside its half of the page
-            $halfPageWidth = $pageWidth / 2
-            $leftX = ($halfPageWidth - $copyWidth) / 2
-            $rightX = $halfPageWidth + $leftX
+            # Center the pair horizontally – equal margins left and right, minimal gap between copies
+            $totalCopiesWidth = (2 * $copyWidth) + $gap
+            $marginLeft = ($pageWidth - $totalCopiesWidth) / 2
             $y = ($pageHeight - $copyHeight) / 2
             
-            $destRect1 = New-Object System.Drawing.Rectangle $leftX, $y, $copyWidth, $copyHeight
-            $destRect2 = New-Object System.Drawing.Rectangle $rightX, $y, $copyWidth, $copyHeight
+            $destRect1 = New-Object System.Drawing.Rectangle $marginLeft, $y, $copyWidth, $copyHeight
+            $destRect2 = New-Object System.Drawing.Rectangle ($marginLeft + $copyWidth + $gap), $y, $copyWidth, $copyHeight
             
             $e.Graphics.DrawImage($image, $destRect1)
             $e.Graphics.DrawImage($image, $destRect2)
