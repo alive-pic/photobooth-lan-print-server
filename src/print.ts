@@ -154,26 +154,48 @@ async function printWithDotNetPrinting(filePath: string, copies: number, printer
           $pageIsLandscape = $pageWidth -gt $pageHeight
           $imageIsLandscape = $imageWidth -gt $imageHeight
           
-          # Determine if we need to handle special tiling case (2x6 portrait strips on landscape 6x4 media)
-          $tileTwoCopies = $pageIsLandscape -and -not $imageIsLandscape
+          # Detect if the image looks like a narrow strip (either orientation)
+          $aspectRatio = if ($imageWidth -gt 0) { $imageHeight / [double]$imageWidth } else { 0 }
+          $isStrip = ($aspectRatio -gt 2) -or ($aspectRatio -lt 0.5)
+          
+          # We need to tile two copies when the page is landscape (e.g. 6x4) AND the source is a strip
+          $tileTwoCopies = $pageIsLandscape -and $isStrip
           
           if ($tileTwoCopies) {
-            # We will print two copies side-by-side without rotating the image.
+            # Ensure the strip is portrait (taller than wide). If it is currently landscape, rotate it 90°.
+            $stripImage = $image
+            $stripWidth = $imageWidth
+            $stripHeight = $imageHeight
+            if ($imageIsLandscape) {
+              $stripImage = New-Object System.Drawing.Bitmap $imageHeight, $imageWidth
+              $g = [System.Drawing.Graphics]::FromImage($stripImage)
+              $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+              $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
+              $g.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+              
+              $g.TranslateTransform($imageHeight / 2, $imageWidth / 2)
+              $g.RotateTransform(90)
+              $g.TranslateTransform(-$imageWidth / 2, -$imageHeight / 2)
+              $g.DrawImage($image, 0, 0, $imageWidth, $imageHeight)
+              $g.Dispose()
+              
+              $stripWidth = $imageHeight
+              $stripHeight = $imageWidth
+            }
             
             # Configuration: small gap between strips (in hundredths of an inch)
-            $gapInch = 0.1  # ≈2.5 mm safety for the cutter
+            $gapInch = 0.1  # ≈2.5 mm
             $gap = [int]($gapInch * 100)
             
-            # Scale the image to fit the page height (or half page width minus half the gap) while keeping aspect ratio
+            # Scale strip to fill page height (or half page width minus half the gap)
             $availableHalfWidth = ($pageWidth - $gap) / 2
-            $scaleX = $availableHalfWidth / $imageWidth
-            $scaleY = $pageHeight / $imageHeight
+            $scaleX = $availableHalfWidth / $stripWidth
+            $scaleY = $pageHeight / $stripHeight
             $scale = [Math]::Min($scaleX, $scaleY)
             
-            $copyWidth = [int]($imageWidth * $scale)
-            $copyHeight = [int]($imageHeight * $scale)
+            $copyWidth = [int]($stripWidth * $scale)
+            $copyHeight = [int]($stripHeight * $scale)
             
-            # Center the pair horizontally – equal margins left and right, minimal gap between copies
             $totalCopiesWidth = (2 * $copyWidth) + $gap
             $marginLeft = ($pageWidth - $totalCopiesWidth) / 2
             $y = ($pageHeight - $copyHeight) / 2
@@ -181,8 +203,10 @@ async function printWithDotNetPrinting(filePath: string, copies: number, printer
             $destRect1 = New-Object System.Drawing.Rectangle $marginLeft, $y, $copyWidth, $copyHeight
             $destRect2 = New-Object System.Drawing.Rectangle ($marginLeft + $copyWidth + $gap), $y, $copyWidth, $copyHeight
             
-            $e.Graphics.DrawImage($image, $destRect1)
-            $e.Graphics.DrawImage($image, $destRect2)
+            $e.Graphics.DrawImage($stripImage, $destRect1)
+            $e.Graphics.DrawImage($stripImage, $destRect2)
+            
+            if ($stripImage -ne $image) { $stripImage.Dispose() }
           } else {
             # Existing logic – rotate if orientations don't match, then scale to fill/fit as previously implemented
             
