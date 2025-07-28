@@ -143,8 +143,8 @@ async function printWithDotNetPrinting(filePath: string, copies: number, printer
         try {
           $image = [System.Drawing.Image]::FromFile($filePath)
           
-          # Determine printer page orientation reliably
-          $pageIsLandscape = $e.PageSettings.Landscape
+          # Determine printer page orientation – some drivers don’t set Landscape flag correctly
+          $pageIsLandscape = $e.PageSettings.Landscape -or ($e.PageBounds.Width -gt $e.PageBounds.Height)
           
           # Obtain page bounds (already rotated if landscape)
           $pageWidth = $e.PageBounds.Width
