@@ -182,12 +182,8 @@ async function printWithDotNetPrinting(filePath, copies, printerName, paperSize)
           # Detect if the source image itself is landscape
           $imageIsLandscape = $imageWidth -gt $imageHeight
           
-          # Detect if the image looks like a narrow strip (either orientation)
-          $aspectRatio = if ($imageWidth -gt 0) { $imageHeight / [double]$imageWidth } else { 0 }
-          $isStrip = ($aspectRatio -gt 2) -or ($aspectRatio -lt 0.5)
-          
-          # We need to tile two copies when the page is landscape (e.g. 6x4) AND the source is a strip
-          $tileTwoCopies = $pageIsLandscape -and $isStrip
+          # Skip all in-printer tiling/duplication – the PhotoBooth app already duplicates strips when needed
+          $tileTwoCopies = $false
           
           if ($tileTwoCopies) {
             # Ensure the strip is portrait (taller than wide). If it is currently landscape, rotate it 90°.
@@ -242,7 +238,15 @@ async function printWithDotNetPrinting(filePath, copies, printerName, paperSize)
             $finalImageWidth = $imageWidth
             $finalImageHeight = $imageHeight
             
+            # Rotate only if orientation differs AND aspect ratios are not reciprocal (e.g. 6x4 vs 4x6)
+            $shouldRotate = $false
             if ($pageIsLandscape -ne $imageIsLandscape) {
+              $pageRatio = $pageWidth / [double]$pageHeight
+              $imageRatio = $imageWidth / [double]$imageHeight
+              $ratioDiff = [Math]::Abs($pageRatio - (1 / $imageRatio))
+              if ($ratioDiff -gt 0.2) { $shouldRotate = $true }
+            }
+            if ($shouldRotate) {
               Write-Host "Rotating image to match page orientation"
               $rotatedImage = New-Object System.Drawing.Bitmap $imageHeight, $imageWidth
               $graphics = [System.Drawing.Graphics]::FromImage($rotatedImage)
