@@ -20,13 +20,11 @@
     "cors": "^2.8.5",
     "dotenv": "^10.0.0",
     "express": "^4.18.2",
-    "semver": "^7.5.4",
     "uuid": "^9.0.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
     "@types/node": "^20.8.10",
-    "@types/semver": "^7.7.0",
     "@types/uuid": "^9.0.2",
     "pkg": "^5.8.1",
     "rimraf": "^5.0.10",

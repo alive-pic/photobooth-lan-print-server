@@ -15,7 +15,6 @@ const print_1 = require("./print");
 const node_process_1 = require("node:process");
 const readline_1 = __importDefault(require("readline"));
 const child_process_1 = require("child_process");
-const updater_1 = require("./updater");
 dotenv_1.default.config();
 const app = (0, express_1.default)();
 app.use((0, cors_1.default)({ origin: "*" }));
@@ -147,10 +146,6 @@ process.stdin.on('keypress', (str, key) => {
     }
 });
 (async () => {
-    const shouldExit = await (0, updater_1.checkForUpdates)();
-    if (shouldExit) {
-        process.exit(0);
-    }
     try {
         // Detect default printer
         const detected = await (0, print_1.detectDefaultPrinter)();

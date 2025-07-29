@@ -10,7 +10,6 @@ import { print, detectDefaultPrinter, getAvailablePrinters, getPrinterPageSize }
 import { platform } from "node:process";
 import readline from "readline";
 import { exec } from "child_process";
-import { checkForUpdates } from "./updater";
 
 dotenv.config();
 
@@ -147,11 +146,6 @@ process.stdin.on('keypress', (str, key) => {
 });
 
 (async () => {
-  const shouldExit = await checkForUpdates();
-  if (shouldExit) {
-    process.exit(0);
-  }
-
   try {
     // Detect default printer
     const detected = await detectDefaultPrinter();
