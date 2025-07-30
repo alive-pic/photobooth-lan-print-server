@@ -245,14 +245,10 @@ async function printWithDotNetPrinting(filePath: string, copies: number, printer
               $finalImageHeight = $imageWidth
             }
             
-            # Calculate scaling as before
+            # Scale to fit (contain) so entire image including padding stays visible
             $scaleX = $pageWidth / $finalImageWidth
             $scaleY = $pageHeight / $finalImageHeight
-            if ($pageIsLandscape -ne $imageIsLandscape) {
-              $scale = [Math]::Min($scaleX, $scaleY)
-            } else {
-              $scale = [Math]::Max($scaleX, $scaleY)
-            }
+            $scale = [Math]::Min($scaleX, $scaleY)
             
             $newWidth = [int]($finalImageWidth * $scale)
             $newHeight = [int]($finalImageHeight * $scale)

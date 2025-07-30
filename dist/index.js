@@ -15,6 +15,16 @@ const print_1 = require("./print");
 const node_process_1 = require("node:process");
 const readline_1 = __importDefault(require("readline"));
 const child_process_1 = require("child_process");
+// Get version from package.json
+function getCurrentVersion() {
+    try {
+        const pkgJson = require("../package.json");
+        return pkgJson.version || "unknown";
+    }
+    catch {
+        return "unknown";
+    }
+}
 dotenv_1.default.config();
 const app = (0, express_1.default)();
 app.use((0, cors_1.default)({ origin: "*" }));
@@ -26,16 +36,9 @@ let printCount = 0; // Add print counter
 let statsLinePosition = 0; // Track where the stats section is
 // Function to update print statistics display
 function updatePrintStats() {
-    // Clear the last few lines and redraw the statistics section
-    // Move up to clear the print job messages and stats section
-    for (let i = 0; i < 7; i++) {
-        process.stdout.write('\x1b[1A'); // Move up one line
-        process.stdout.write('\x1b[2K'); // Clear that line
-    }
-    // Redraw the statistics section
-    console.log(colorStart + "============= Print Statistics =============" + reset);
-    console.log(colorStart + `📊 Total prints: ${printCount}` + reset);
-    console.log(colorStart + "==========================================\n" + reset);
+    console.log("");
+    console.log(colorStart + `✅ ---------> Print completed! Total prints: ${printCount}` + reset);
+    console.log("");
 }
 // ────────────────────────────────────────────────────────────
 // Fancy banner so the console shows the server is "ALIVE" 👋
@@ -151,16 +154,20 @@ process.stdin.on('keypress', (str, key) => {
         const detected = await (0, print_1.detectDefaultPrinter)();
         if (detected) {
             printerName = detected;
-            console.log(colorStart + `🖨️  Default printer found: ${printerName}` + reset);
+            console.log(colorStart + `🖨️  Default printer: ${printerName}` + reset);
         }
         else {
             console.warn(colorStart + "⚠️  No default printer detected – will use Windows default print queue" + reset);
         }
+        // Log current software version
+        const version = getCurrentVersion();
+        console.log(colorStart + `📦 Software version: ${version}` + reset);
         // Get all available printers
         try {
             availablePrinters = await (0, print_1.getAvailablePrinters)();
             if (availablePrinters.length > 0) {
-                console.log(colorStart + `📋 Available printers: ${availablePrinters.join(", ")}` + reset);
+                console.log(colorStart + `📋 Available printers: ${availablePrinters.length} found` + reset);
+                console.log("");
             }
             else {
                 console.warn(colorStart + "⚠️  No printers detected on your system" + reset);
@@ -168,6 +175,28 @@ process.stdin.on('keypress', (str, key) => {
         }
         catch (err) {
             console.warn(colorStart + "⚠️  Could not detect available printers" + reset);
+        }
+        // Get and log page size for default printer
+        if (printerName) {
+            try {
+                const pageSize = await (0, print_1.getPrinterPageSize)(printerName);
+                if (pageSize) {
+                    let logMessage = `📏 Page size: ${pageSize.widthInch}" x ${pageSize.heightInch}" \n ${pageSize.name}`;
+                    if (pageSize.actualPaperSize && (pageSize.actualPaperSize.widthInch !== pageSize.widthInch || pageSize.actualPaperSize.heightInch !== pageSize.heightInch)) {
+                        logMessage += `\n Paper: ${pageSize.actualPaperSize.widthInch}" x ${pageSize.actualPaperSize.heightInch}"`;
+                    }
+                    if (pageSize.printableArea) {
+                        logMessage += `\n Print area: ${pageSize.printableArea.widthInch}" x ${pageSize.printableArea.heightInch}"`;
+                    }
+                    console.log(colorStart + logMessage + reset);
+                }
+                else {
+                    console.warn(colorStart + `⚠️  Could not determine page size for printer: ${printerName}` + reset);
+                }
+            }
+            catch (err) {
+                console.warn(colorStart + `⚠️  Failed to get page size for printer: ${printerName}` + reset);
+            }
         }
     }
     catch (err) {
@@ -289,13 +318,13 @@ process.stdin.on('keypress', (str, key) => {
             // Don't fail here, let the print function handle it
         }
         const jobId = (0, uuid_1.v4)();
-        console.log(colorStart + `🖨️  Print job ${jobId}: ${copies} copy${copies > 1 ? 'ies' : 'y'} to ${selectedPrinter || "default printer"}` + reset);
+        // console.log(colorStart + `🖨️  Print job ${jobId}: ${copies} copy${copies > 1 ? 'ies' : 'y'} to ${selectedPrinter || "default printer"}` + reset);
         const ext = mimeType === "image/jpeg" ? "jpg" : "png";
         const tempDir = os_1.default.tmpdir();
         const filePath = path_1.default.join(tempDir, `${jobId}.${ext}`);
         try {
             await promises_1.default.writeFile(filePath, Buffer.from(data, "base64"));
-            console.log(colorStart + `📁 Photo saved temporarily for printing` + reset);
+            // console.log(colorStart + `📁 Photo saved temporarily for printing` + reset);
             // Determine paper size for 2x6 templates that should be cut from 4x6 paper
             let paperSize = undefined;
             if (template && template.widthInch === 2 && template.heightInch === 6) {
@@ -306,7 +335,7 @@ process.stdin.on('keypress', (str, key) => {
                 console.log(colorStart + `📏 2x6 template detected - will print on 4x6 paper for cutting` + reset);
             }
             await (0, print_1.print)({ filePath, copies, printerName: selectedPrinter, hasAccess, paperSize });
-            console.log(colorStart + `✅ Print job completed successfully!` + reset);
+            // console.log(colorStart + `✅ Print job completed successfully!` + reset);
             // Increment print counter
             printCount += copies;
             updatePrintStats(); // Update statistics display
@@ -354,26 +383,24 @@ process.stdin.on('keypress', (str, key) => {
                 }
             }
         }
-        console.log(colorStart + "🚀 PhotoBooth Print Server is now running!" + reset);
-        console.log(colorStart + "📱 Alive app can now connect to print photos" + reset);
         console.log("");
-        if (addrs.length === 0) {
-            console.log(colorStart + `🌐 Server address: http://localhost:${port}` + reset);
-        }
-        else {
-            console.log(colorStart + "🌐 Server addresses:" + reset);
-            for (const addr of addrs) {
-                console.log(colorStart + `   http://${addr}:${port}` + reset);
-            }
-        }
-        console.log("");
-        console.log(colorStart + `🖨️  Default printer: ${printerName || "Windows default"}` + reset);
-        if (availablePrinters.length > 0) {
-            console.log(colorStart + `📋 Available printers: ${availablePrinters.join(", ")}` + reset);
-        }
-        else {
-            console.log(colorStart + "⚠️  No printers detected - please check your printer setup" + reset);
-        }
+        console.log(colorStart + "🎉 Alive magic print server is now running and ready to print photos" + reset);
+        // if (addrs.length === 0) {
+        //   console.log(colorStart + `🌐 Server address: http://localhost:${port}` + reset);
+        // } else {
+        //   console.log(colorStart + "🌐 Server addresses:" + reset);
+        //   for (const addr of addrs) {
+        //     console.log(colorStart + `   http://${addr}:${port}` + reset);
+        //   }
+        // }
+        // console.log("");
+        // console.log(colorStart + `🖨️  Default printer: ${printerName || "Windows default"}` + reset);
+        // if (availablePrinters.length > 0) {
+        //   console.log(colorStart + `📋 Available printers: ${availablePrinters.join(", ")}` + reset);
+        //   console.log("");
+        // } else {
+        //   console.log(colorStart + "⚠️  No printers detected - please check your printer setup" + reset);
+        // }
         console.log("");
         // Keyboard shortcuts instructions
         console.log(colorStart + "============= Quick Actions =============" + reset);
@@ -381,14 +408,14 @@ process.stdin.on('keypress', (str, key) => {
         console.log(colorStart + "• Press Ctrl+C to stop the server" + reset);
         console.log(colorStart + "==========================================" + reset);
         // API endpoints information
-        console.log("");
-        console.log(colorStart + "============= API Endpoints =============" + reset);
-        console.log(colorStart + "• GET /health - Server health check" + reset);
-        console.log(colorStart + "• GET /info - Server information" + reset);
-        console.log(colorStart + "• GET /printers - Available printers" + reset);
-        console.log(colorStart + "• GET /page_size - Current printer page size" + reset);
-        console.log(colorStart + "• POST /print - Print an image" + reset);
-        console.log(colorStart + "==========================================" + reset);
+        // console.log("");
+        // console.log(colorStart + "============= API Endpoints =============" + reset);
+        // console.log(colorStart + "• GET /health - Server health check" + reset);
+        // console.log(colorStart + "• GET /info - Server information" + reset);
+        // console.log(colorStart + "• GET /printers - Available printers" + reset);
+        // console.log(colorStart + "• GET /page_size - Current printer page size" + reset);
+        // console.log(colorStart + "• POST /print - Print an image" + reset);
+        // console.log(colorStart + "==========================================" + reset);
         // Print statistics section
         console.log("");
         console.log(colorStart + "============= Print Statistics =============" + reset);
