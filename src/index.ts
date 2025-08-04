@@ -348,7 +348,8 @@ process.stdin.on('keypress', (str, key) => {
         console.log(colorStart + `📏 2x6 template detected - will print on 4x6 paper for cutting` + reset);
       }
 
-      await print({ filePath, copies, printerName: selectedPrinter, hasAccess, paperSize });
+      const isFullCover = template?.isFullCover === true;
+      await print({ filePath, copies, printerName: selectedPrinter, hasAccess, paperSize, isFullCover });
       // console.log(colorStart + `✅ Print job completed successfully!` + reset);
       
       // Increment print counter

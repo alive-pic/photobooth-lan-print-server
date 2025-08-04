@@ -20,9 +20,10 @@ export interface PrintOptions {
     widthInch: number;
     heightInch: number;
   };
+  isFullCover?: boolean; // Disable safe margin for full-cover templates
 }
 
-export async function print({ filePath, copies, printerName, hasAccess = false, paperSize }: PrintOptions): Promise<void> {
+export async function print({ filePath, copies, printerName, hasAccess = false, paperSize, isFullCover = false }: PrintOptions): Promise<void> {
   const isWindows = platform === "win32";
   
   let fileToPrint = filePath;
@@ -50,10 +51,11 @@ export async function print({ filePath, copies, printerName, hasAccess = false, 
 
   // When hasAccess is false, always print only 1 copy
   const copiesToPrint = hasAccess ? copies : 1;
+  const disableMargin = isFullCover;
 
   if (isWindows) {
     // Try PowerShell Start-Process first, fallback to ImageView_PrintTo for images
-    const printSuccess = await tryWindowsPrintMethods(fileToPrint, copiesToPrint, printerName, paperSize);
+    const printSuccess = await tryWindowsPrintMethods(fileToPrint, copiesToPrint, printerName, paperSize, disableMargin);
     if (!printSuccess) {
       throw new Error("All Windows printing methods failed");
     }
@@ -72,10 +74,10 @@ export async function print({ filePath, copies, printerName, hasAccess = false, 
   }
 }
 
-async function tryWindowsPrintMethods(filePath: string, copies: number, printerName?: string, paperSize?: { widthInch: number; heightInch: number }): Promise<boolean> {
+async function tryWindowsPrintMethods(filePath: string, copies: number, printerName?: string, paperSize?: { widthInch: number; heightInch: number }, disableMargin: boolean = false): Promise<boolean> {
   // Method 1: Use .NET printing system through PowerShell (respects all printer preferences)
   try {
-    await printWithDotNetPrinting(filePath, copies, printerName, paperSize);
+    await printWithDotNetPrinting(filePath, copies, printerName, paperSize, disableMargin);
     return true;
   } catch (err) {
     console.log('.NET printing failed, falling back to basic methods');
@@ -102,10 +104,12 @@ async function tryWindowsPrintMethods(filePath: string, copies: number, printerN
   return false;
 }
 
-async function printWithDotNetPrinting(filePath: string, copies: number, printerName?: string, paperSize?: { widthInch: number; heightInch: number }): Promise<void> {
+async function printWithDotNetPrinting(filePath: string, copies: number, printerName?: string, paperSize?: { widthInch: number; heightInch: number }, disableMargin: boolean = false): Promise<void> {
   // This method uses .NET printing classes through PowerShell to respect all printer preferences
   // including cutting settings, paper sizes, and other driver-specific options
   
+  const disableMarginFlag = disableMargin ? '$true' : '$false';
+  const marginValue = disableMargin ? 0 : 10.0; // 0 disables margin for full-cover
   const escapedFilePath = filePath.replace(/'/g, "''");
   const escapedPrinterName = printerName ? printerName.replace(/'/g, "''") : '';
   
@@ -116,6 +120,7 @@ async function printWithDotNetPrinting(filePath: string, copies: number, printer
     $filePath = '${escapedFilePath}'
     $copies = ${copies}
     $printerName = '${escapedPrinterName}'
+    $disableMargin = ${disableMarginFlag}
     
     try {
       # Create PrintDocument object
@@ -155,6 +160,14 @@ async function printWithDotNetPrinting(filePath: string, copies: number, printer
           $originY = $e.PageSettings.PrintableArea.Y
           $printableWidth = $e.PageSettings.PrintableArea.Width
           $printableHeight = $e.PageSettings.PrintableArea.Height
+
+          # For borderless/full-cover templates, override printable area to page bounds
+          if ($disableMargin) {
+              $originX = 0
+              $originY = 0
+              $printableWidth  = $pageWidth
+              $printableHeight = $pageHeight
+          }
 
           # ---- BEGIN DUPLICATE‐STRIP PATH (disabled by default) ----
           $tileTwoCopies = $false  # PhotoBooth already duplicates when needed
@@ -215,22 +228,31 @@ async function printWithDotNetPrinting(filePath: string, copies: number, printer
                   $finalImageHeight = $imageWidth
               }
               
-              # Scale to fit printable region (contain)
+              # Scale to fit printable region
               $scaleX = $printableWidth  / $finalImageWidth
               $scaleY = $printableHeight / $finalImageHeight
-              $scale  = [Math]::Min($scaleX, $scaleY)
+              if ($disableMargin) {
+                  # FULL-COVER: fill entire page (cover) – may crop
+                  $scale  = [Math]::Max($scaleX, $scaleY)
+              }
+              else {
+                  # Standard: contain within printable area
+                  $scale  = [Math]::Min($scaleX, $scaleY)
+              }
               $newWidth  = [int]($finalImageWidth  * $scale)
               $newHeight = [int]($finalImageHeight * $scale)
               
-              # BEGIN: Safe margin to avoid clipping outer edges (approx 0.125")
-              $margin = 10.0  # 0.125 inch expressed in hundredths of an inch
-              if ($newWidth -gt ($margin * 2) -and $newHeight -gt ($margin * 2)) {
-                  $newWidth  = $newWidth  - ($margin * 2)
-                  $newHeight = $newHeight - ($margin * 2)
+              if (-not $disableMargin) {
+                  # BEGIN: Safe margin to avoid clipping outer edges (approx 0.125")
+                  $margin = ${marginValue}
+                  if ($margin -gt 0 -and $newWidth -gt ($margin * 2) -and $newHeight -gt ($margin * 2)) {
+                      $newWidth  = $newWidth  - ($margin * 2)
+                      $newHeight = $newHeight - ($margin * 2)
+                  }
+                  # END: Safe margin
               }
-              # END: Safe margin
               
-              # Center in printable area
+              # Center in printable area (may be negative when cover-scaling)
               $x = $originX + ($printableWidth  - $newWidth ) / 2
               $y = $originY + ($printableHeight - $newHeight) / 2
               $destRect = New-Object System.Drawing.Rectangle $x, $y, $newWidth, $newHeight
