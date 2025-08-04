@@ -174,120 +174,96 @@ async function printWithDotNetPrinting(filePath, copies, printerName, paperSize)
           # Obtain page bounds (already rotated if landscape)
           $pageWidth = $e.PageBounds.Width
           $pageHeight = $e.PageBounds.Height
-          
-          # Dimensions of source image (pixels)
-          $imageWidth = $image.Width
-          $imageHeight = $image.Height
-          
-          # Detect if the source image itself is landscape
-          $imageIsLandscape = $imageWidth -gt $imageHeight
-          
-          # Skip all in-printer tiling/duplication – the PhotoBooth app already duplicates strips when needed
-          $tileTwoCopies = $false
-          
+
+          # Obtain printable area (coordinates relative to page origin)
+          $originX = $e.PageSettings.PrintableArea.X
+          $originY = $e.PageSettings.PrintableArea.Y
+          $printableWidth = $e.PageSettings.PrintableArea.Width
+          $printableHeight = $e.PageSettings.PrintableArea.Height
+
+          # ---- BEGIN DUPLICATE‐STRIP PATH (disabled by default) ----
+          $tileTwoCopies = $false  # PhotoBooth already duplicates when needed
           if ($tileTwoCopies) {
-            # Ensure the strip is portrait (taller than wide). If it is currently landscape, rotate it 90°.
-            $stripImage = $image
-            $stripWidth = $imageWidth
-            $stripHeight = $imageHeight
-            if ($imageIsLandscape) {
-              $stripImage = New-Object System.Drawing.Bitmap $imageHeight, $imageWidth
-              $g = [System.Drawing.Graphics]::FromImage($stripImage)
-              $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-              $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
-              $g.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+              # Dimensions
+              $stripWidth  = $image.Width
+              $stripHeight = $image.Height
+              # scale calc same as before
+              $availableHalfWidth = $printableWidth / 2
+              $scaleX = $availableHalfWidth / $stripWidth
+              $scaleY = $printableHeight / $stripHeight
+              $scale  = [Math]::Min($scaleX, $scaleY)
+              $copyWidth  = [int]($stripWidth  * $scale)
+              $copyHeight = [int]($stripHeight * $scale)
+              # Equal three-way gap: left margin == center gap == right margin
+              $gap = ($printableWidth - (2 * $copyWidth)) / 3
+              if ($gap -lt 0) { $gap = 0 }
+              $x1 = $originX + $gap
+              $x2 = $originX + $gap + $copyWidth + $gap
+              $y  = $originY + ($printableHeight - $copyHeight) / 2
+              $destRect1 = New-Object System.Drawing.Rectangle ([int]$x1), [int]$y, $copyWidth, $copyHeight
+              $destRect2 = New-Object System.Drawing.Rectangle ([int]$x2), [int]$y, $copyWidth, $copyHeight
+              $e.Graphics.DrawImage($image, $destRect1)
+              $e.Graphics.DrawImage($image, $destRect2)
+          }
+          else {
+              # ---- STANDARD SINGLE-IMAGE PATH ----
+              # Dimensions of source image
+              $imageWidth  = $image.Width
+              $imageHeight = $image.Height
+              $imageIsLandscape = $imageWidth -gt $imageHeight
               
-              $g.TranslateTransform($imageHeight / 2, $imageWidth / 2)
-              $g.RotateTransform(90)
-              $g.TranslateTransform(-$imageWidth / 2, -$imageHeight / 2)
-              $g.DrawImage($image, 0, 0, $imageWidth, $imageHeight)
-              $g.Dispose()
+              $pageIsLandscape = $printableWidth -gt $printableHeight
               
-              $stripWidth = $imageHeight
-              $stripHeight = $imageWidth
-            }
-            
-            # Configuration: small gap between strips (in hundredths of an inch)
-            $gapInch = 0.1  # ≈2.5 mm
-            $gap = [int]($gapInch * 100)
-            
-            # Scale strip to fill page height (or half page width minus half the gap)
-            $availableHalfWidth = ($pageWidth - $gap) / 2
-            $scaleX = $availableHalfWidth / $stripWidth
-            $scaleY = $pageHeight / $stripHeight
-            $scale = [Math]::Min($scaleX, $scaleY)
-            
-            $copyWidth = [int]($stripWidth * $scale)
-            $copyHeight = [int]($stripHeight * $scale)
-            
-            $totalCopiesWidth = (2 * $copyWidth) + $gap
-            $marginLeft = ($pageWidth - $totalCopiesWidth) / 2
-            $y = ($pageHeight - $copyHeight) / 2
-            
-            $destRect1 = New-Object System.Drawing.Rectangle $marginLeft, $y, $copyWidth, $copyHeight
-            $destRect2 = New-Object System.Drawing.Rectangle ($marginLeft + $copyWidth + $gap), $y, $copyWidth, $copyHeight
-            
-            $e.Graphics.DrawImage($stripImage, $destRect1)
-            $e.Graphics.DrawImage($stripImage, $destRect2)
-            
-            if ($stripImage -ne $image) { $stripImage.Dispose() }
-          } else {
-            # Existing logic – rotate if orientations don't match, then scale to fill/fit as previously implemented
-            
-            $rotatedImage = $image
-            $finalImageWidth = $imageWidth
-            $finalImageHeight = $imageHeight
-            
-            # Rotate only if orientation differs AND aspect ratios are not reciprocal (e.g. 6x4 vs 4x6)
-            $shouldRotate = $false
-            if ($pageIsLandscape -ne $imageIsLandscape) {
-              $pageRatio = $pageWidth / [double]$pageHeight
-              $imageRatio = $imageWidth / [double]$imageHeight
-              $ratioDiff = [Math]::Abs($pageRatio - (1 / $imageRatio))
-              if ($ratioDiff -gt 0.2) { $shouldRotate = $true }
-            }
-            if ($shouldRotate) {
-              Write-Host "Rotating image to match page orientation"
-              $rotatedImage = New-Object System.Drawing.Bitmap $imageHeight, $imageWidth
-              $graphics = [System.Drawing.Graphics]::FromImage($rotatedImage)
+              # Handle orientation mismatch (optional rotate 90°)
+              $rotatedImage      = $image
+              $finalImageWidth   = $imageWidth
+              $finalImageHeight  = $imageHeight
+              $shouldRotate = $false
+              if ($pageIsLandscape -ne $imageIsLandscape) {
+                  $pageRatio   = $printableWidth / [double]$printableHeight
+                  $imageRatio  = $imageWidth     / [double]$imageHeight
+                  $ratioDiff   = [Math]::Abs($pageRatio - (1 / $imageRatio))
+                  if ($ratioDiff -gt 0.2) { $shouldRotate = $true }
+              }
+              if ($shouldRotate) {
+                  $rotatedImage = New-Object System.Drawing.Bitmap $imageHeight, $imageWidth
+                  $g = [System.Drawing.Graphics]::FromImage($rotatedImage)
+                  $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+                  $g.SmoothingMode    = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
+                  $g.PixelOffsetMode  = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+                  $g.TranslateTransform($imageHeight / 2, $imageWidth / 2)
+                  $g.RotateTransform(90)
+                  $g.TranslateTransform(-$imageWidth / 2, -$imageHeight / 2)
+                  $g.DrawImage($image, 0, 0, $imageWidth, $imageHeight)
+                  $g.Dispose()
+                  $finalImageWidth  = $imageHeight
+                  $finalImageHeight = $imageWidth
+              }
               
-              # Set high quality rendering
-              $graphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-              $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
-              $graphics.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+              # Scale to fit printable region (contain)
+              $scaleX = $printableWidth  / $finalImageWidth
+              $scaleY = $printableHeight / $finalImageHeight
+              $scale  = [Math]::Min($scaleX, $scaleY)
+              $newWidth  = [int]($finalImageWidth  * $scale)
+              $newHeight = [int]($finalImageHeight * $scale)
               
-              # Rotate the image 90 degrees clockwise
-              $graphics.TranslateTransform($imageHeight / 2, $imageWidth / 2)
-              $graphics.RotateTransform(90)
-              $graphics.TranslateTransform(-$imageWidth / 2, -$imageHeight / 2)
+              # BEGIN: Safe margin to avoid clipping outer edges (approx 0.125")
+              $margin = 10.0  # 0.125 inch expressed in hundredths of an inch
+              if ($newWidth -gt ($margin * 2) -and $newHeight -gt ($margin * 2)) {
+                  $newWidth  = $newWidth  - ($margin * 2)
+                  $newHeight = $newHeight - ($margin * 2)
+              }
+              # END: Safe margin
               
-              # Draw the rotated image
-              $graphics.DrawImage($image, 0, 0, $imageWidth, $imageHeight)
-              $graphics.Dispose()
-              
-              # Update dimensions for the rotated image
-              $finalImageWidth = $imageHeight
-              $finalImageHeight = $imageWidth
-            }
-            
-            # Scale to fit (contain) so entire image including padding stays visible
-            $scaleX = $pageWidth / $finalImageWidth
-            $scaleY = $pageHeight / $finalImageHeight
-            $scale = [Math]::Min($scaleX, $scaleY)
-            
-            $newWidth = [int]($finalImageWidth * $scale)
-            $newHeight = [int]($finalImageHeight * $scale)
-            
-            # Center the image on the page
-            $x = ($pageWidth - $newWidth) / 2
-            $y = ($pageHeight - $newHeight) / 2
-            
-            $destRect = New-Object System.Drawing.Rectangle $x, $y, $newWidth, $newHeight
-            $e.Graphics.DrawImage($rotatedImage, $destRect)
-            
-            if ($rotatedImage -ne $image) { $rotatedImage.Dispose() }
+              # Center in printable area
+              $x = $originX + ($printableWidth  - $newWidth ) / 2
+              $y = $originY + ($printableHeight - $newHeight) / 2
+              $destRect = New-Object System.Drawing.Rectangle $x, $y, $newWidth, $newHeight
+              $e.Graphics.DrawImage($rotatedImage, $destRect)
+              if ($rotatedImage -ne $image) { $rotatedImage.Dispose() }
           }
           
+          if ($image) { $image.Dispose() }
         } catch {
           Write-Error "Error drawing image: $_"
         }
